@@ -1,0 +1,9 @@
+# Temporary files
+.tmp/
+
+# Environment Variables
+.env
+
+# Typical OS files
+.DS_Store
+Thumbs.db
