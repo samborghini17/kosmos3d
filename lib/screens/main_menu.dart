@@ -3,12 +3,15 @@ import 'package:provider/provider.dart';
 import '../models/scan_project.dart';
 import '../providers/settings_provider.dart';
 import '../services/project_service.dart';
+import '../services/gopro_service.dart';
 
 import '../widgets/glass_card.dart';
 import 'settings.dart';
 import 'project_flow.dart';
 import 'capture_session.dart';
 import 'gallery_screen.dart';
+import 'point_cloud_preview.dart';
+import 'qr_config_screen.dart';
 
 class MainMenuScreen extends StatelessWidget {
   const MainMenuScreen({super.key});
@@ -17,21 +20,34 @@ class MainMenuScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
     final projectService = context.watch<ProjectService>();
+    final goPro = context.watch<GoProService>();
+    final connectedCount = goPro.devices.where((d) => d.isConnected).length;
+    final primary = Theme.of(context).primaryColor;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(settings.translate('app_title')),
         actions: [
+          // Connected cameras badge
+          if (connectedCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Chip(
+                avatar: Icon(Icons.camera_alt, size: 14, color: primary),
+                label: Text('$connectedCount',
+                    style: TextStyle(color: primary, fontWeight: FontWeight.bold, fontSize: 12)),
+                backgroundColor: primary.withValues(alpha: 0.1),
+                side: BorderSide.none,
+                padding: EdgeInsets.zero,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: settings.translate('settings'),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              );
-            },
-          )
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen())),
+          ),
         ],
       ),
       body: SafeArea(
@@ -40,18 +56,33 @@ class MainMenuScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Section title
+              // ─── QUICK TOOLS BAR ─────────────────────
+              SizedBox(
+                height: 72,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    _quickTool(context, Icons.qr_code, settings.translate('qr_config'), () =>
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const QrConfigScreen()))),
+                    _quickTool(context, Icons.view_in_ar, settings.translate('trajectory_preview'), () =>
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const PointCloudPreviewScreen()))),
+                    _quickTool(context, Icons.camera_alt, settings.translate('device_manager'), () =>
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ─── PROJECT LIST ────────────────────────
               Padding(
                 padding: const EdgeInsets.only(bottom: 12.0, left: 4.0),
                 child: Text(
                   settings.translate('project_overview'),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                    color: Colors.white, fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              // Project List
               Expanded(
                 child: projectService.isLoading
                     ? const Center(child: CircularProgressIndicator())
@@ -62,15 +93,11 @@ class MainMenuScreen extends StatelessWidget {
                               children: [
                                 Icon(Icons.view_in_ar, size: 64, color: Colors.white.withValues(alpha: 0.2)),
                                 const SizedBox(height: 16),
-                                Text(
-                                  settings.translate('no_projects'),
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 16),
-                                ),
+                                Text(settings.translate('no_projects'),
+                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 16)),
                                 const SizedBox(height: 8),
-                                Text(
-                                  settings.translate('create_first_project'),
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14),
-                                ),
+                                Text(settings.translate('create_first_project'),
+                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14)),
                               ],
                             ),
                           )
@@ -91,14 +118,37 @@ class MainMenuScreen extends StatelessWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const ProjectFlowScreen()),
-          );
-        },
+        onPressed: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const ProjectFlowScreen())),
         icon: const Icon(Icons.add),
         label: Text(settings.translate('new_project')),
+      ),
+    );
+  }
+
+  Widget _quickTool(BuildContext context, IconData icon, String label, VoidCallback onTap) {
+    final primary = Theme.of(context).primaryColor;
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 88,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: primary.withValues(alpha: 0.15)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 24, color: primary),
+              const SizedBox(height: 4),
+              Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10),
+                  textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -111,35 +161,27 @@ class MainMenuScreen extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
         leading: Container(
-          width: 48,
-          height: 48,
+          width: 48, height: 48,
           decoration: BoxDecoration(
             color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(modeIcon, color: Theme.of(context).primaryColor, size: 28),
         ),
-        title: Text(
-          project.name,
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
-        ),
+        title: Text(project.name,
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Row(
             children: [
               Icon(Icons.camera, size: 14, color: Colors.white.withValues(alpha: 0.5)),
               const SizedBox(width: 4),
-              Text(
-                '${project.captureCount} captures',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
-              ),
+              Text('${project.captureCount} captures',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
               const SizedBox(width: 12),
               Icon(Icons.access_time, size: 14, color: Colors.white.withValues(alpha: 0.5)),
               const SizedBox(width: 4),
-              Text(
-                timeAgo,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
-              ),
+              Text(timeAgo, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
             ],
           ),
         ),
@@ -147,53 +189,38 @@ class MainMenuScreen extends StatelessWidget {
           icon: const Icon(Icons.more_vert, color: Colors.white54),
           onSelected: (value) async {
             if (value == 'open') {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => CaptureSessionScreen(project: project)),
-              );
+              Navigator.push(context, MaterialPageRoute(builder: (_) => CaptureSessionScreen(project: project)));
             } else if (value == 'gallery') {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => GalleryScreen(project: project)),
-              );
+              Navigator.push(context, MaterialPageRoute(builder: (_) => GalleryScreen(project: project)));
+            } else if (value == '3d') {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const PointCloudPreviewScreen()));
             } else if (value == 'delete') {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   backgroundColor: const Color(0xFF1E1E1E),
                   title: const Text('Delete Project?', style: TextStyle(color: Colors.white)),
-                  content: Text('This will permanently delete "${project.name}" and all its capture data.', style: const TextStyle(color: Colors.white70)),
+                  content: Text('This will permanently delete "${project.name}" and all its capture data.',
+                      style: const TextStyle(color: Colors.white70)),
                   actions: [
                     TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                    ),
+                    TextButton(onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Delete', style: TextStyle(color: Colors.redAccent))),
                   ],
                 ),
               );
-              if (confirmed == true) {
-                await projectService.deleteProject(project.id);
-              }
+              if (confirmed == true) await projectService.deleteProject(project.id);
             }
           },
-          itemBuilder: (BuildContext context) {
-            return [
-              const PopupMenuItem<String>(value: 'open', child: Text('Open Session')),
-              const PopupMenuItem<String>(value: 'gallery', child: Text('Gallery')),
-              const PopupMenuItem<String>(
-                value: 'delete',
-                child: Text('Delete', style: TextStyle(color: Colors.redAccent)),
-              ),
-            ];
-          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'open', child: Text('Open Session')),
+            const PopupMenuItem(value: 'gallery', child: Text('Gallery')),
+            const PopupMenuItem(value: '3d', child: Text('3D Preview')),
+            const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.redAccent))),
+          ],
         ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => CaptureSessionScreen(project: project)),
-          );
-        },
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => CaptureSessionScreen(project: project))),
       ),
     );
   }

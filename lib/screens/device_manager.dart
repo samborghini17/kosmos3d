@@ -273,6 +273,48 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              // Secondary actions row
+              Row(
+                children: [
+                  _buildActionButton(
+                    icon: Icons.link_off,
+                    label: settings.translate('disconnect'),
+                    color: Colors.orange,
+                    onTap: () => goPro.disconnectDevice(cam.id),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildActionButton(
+                    icon: Icons.sd_card,
+                    label: settings.translate('format_sd'),
+                    color: Colors.redAccent,
+                    onTap: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: const Color(0xFF1E1E1E),
+                          title: const Text('⚠️ Format SD Card?', style: TextStyle(color: Colors.white)),
+                          content: Text(settings.translate('format_sd_confirm'),
+                              style: const TextStyle(color: Colors.orange)),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                            TextButton(onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Format', style: TextStyle(color: Colors.redAccent))),
+                          ],
+                        ),
+                      );
+                      if (ok == true) await goPro.formatSdCard(cam.id);
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _buildActionButton(
+                    icon: Icons.power_settings_new,
+                    label: settings.translate('power_off'),
+                    color: Colors.redAccent,
+                    onTap: () => goPro.powerOff(cam.id),
+                  ),
+                ],
+              ),
             ],
           ],
         ),

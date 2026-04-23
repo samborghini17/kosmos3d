@@ -50,6 +50,14 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
   StreamSubscription? _magnetometerSub;
   bool _hasLocationPermission = false;
 
+  // Timelapse mode
+  bool _timelapseActive = false;
+  Timer? _timelapseTimer;
+  int _timelapseInterval = 5; // seconds
+
+  // Quality scoring
+  double _qualityScore = 0;
+
   // Animations
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -114,6 +122,7 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
   @override
   void dispose() {
     _uiTimer?.cancel();
+    _timelapseTimer?.cancel();
     _sessionTimer.stop();
     _pulseController.dispose();
     _flashController.dispose();
@@ -146,6 +155,9 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
     }
 
     setState(() => _isCapturing = true);
+
+    // Quality-based haptic feedback
+    final preCaptureCoverage = _coveragePercentage;
     HapticFeedback.heavyImpact();
     _flashController.forward().then((_) => _flashController.reverse());
 
@@ -173,6 +185,15 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
     await goPro.triggerAllShutters();
 
     await Future.delayed(const Duration(milliseconds: 300));
+
+    // Quality-based haptic: double vibrate if coverage improved significantly
+    final postCaptureCoverage = _coveragePercentage;
+    if (postCaptureCoverage - preCaptureCoverage > 2) {
+      HapticFeedback.mediumImpact();
+    }
+
+    // Calculate quality score
+    _qualityScore = _calculateQualityScore();
 
     setState(() {
       _sessionCaptureCount++;
@@ -390,6 +411,31 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                     ),
                   ),
 
+                  // ─── Timelapse Toggle ───
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
+                    child: Row(
+                      children: [
+                        Icon(Icons.timer, size: 14, color: _timelapseActive ? primaryColor : Colors.white38),
+                        const SizedBox(width: 6),
+                        Text(settings.translate('timelapse_mode'),
+                            style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
+                        const Spacer(),
+                        if (_timelapseActive)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text('${_timelapseInterval}s',
+                                style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        Switch(
+                          value: _timelapseActive,
+                          activeColor: primaryColor,
+                          onChanged: (val) => _toggleTimelapse(val),
+                        ),
+                      ],
+                    ),
+                  ),
+
                   // ─── Bottom Info ───
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -405,6 +451,7 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                           '${_coveragePercentage.toInt()}%',
                           'Coverage',
                         ),
+                        _buildBottomStat(Icons.star, '${_qualityScore.toInt()}', 'Score'),
                       ],
                     ),
                   ),
@@ -494,10 +541,83 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
     );
   }
 
-  /// AI Capture Hint: Analyzes coverage gaps and suggests direction.
+  // ─── TIMELAPSE ──────────────────────────────────────────────
+
+  void _toggleTimelapse(bool active) {
+    setState(() => _timelapseActive = active);
+    if (active) {
+      _timelapseTimer = Timer.periodic(Duration(seconds: _timelapseInterval), (_) {
+        if (!_isCapturing) _triggerCapture();
+      });
+    } else {
+      _timelapseTimer?.cancel();
+    }
+  }
+
+  // ─── QUALITY SCORING ────────────────────────────────────────
+
+  double _calculateQualityScore() {
+    if (_capturePoints.length < 2) return 0;
+    double score = 0;
+
+    // Coverage contributes 40% of score
+    score += (_coveragePercentage / 100) * 40;
+
+    // Overlap consistency contributes 30%
+    double overlapScore = 0;
+    for (int i = 1; i < _capturePoints.length; i++) {
+      final angleDiff = (_capturePoints[i].heading - _capturePoints[i - 1].heading).abs();
+      final normalizedDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
+      // Ideal overlap: 15-30 degrees between captures
+      if (normalizedDiff >= 10 && normalizedDiff <= 35) {
+        overlapScore += 1.0;
+      } else if (normalizedDiff < 10) {
+        overlapScore += 0.5; // Too close
+      } else {
+        overlapScore += 0.2; // Too far apart
+      }
+    }
+    score += (overlapScore / (_capturePoints.length - 1)) * 30;
+
+    // Capture density contributes 30% (target: 50+ captures)
+    score += min(_capturePoints.length / 50, 1.0) * 30;
+
+    return score.clamp(0, 100);
+  }
+
+  /// AI Capture Hint: Analyzes coverage gaps, overlap, speed, and suggests direction.
   String _getAiHint() {
-    if (_coveragePercentage >= 95) return 'Excellent coverage! You can end the session.';
-    if (_coveragePercentage >= 90) return 'Great coverage. Capture a few more for safety.';
+    if (_coveragePercentage >= 95) return '✅ Excellent coverage! Quality: ${_qualityScore.toInt()}/100';
+    if (_coveragePercentage >= 90) return '🎯 Great coverage. A few more for safety.';
+
+    // Check overlap between last captures
+    if (_capturePoints.length >= 2) {
+      final last = _capturePoints.last;
+      final prev = _capturePoints[_capturePoints.length - 2];
+      final angleDiff = (last.heading - prev.heading).abs();
+      final normalizedDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
+
+      if (normalizedDiff > 40) {
+        return '⚠️ Large gap (${normalizedDiff.toInt()}°) between last captures. Move slower.';
+      }
+      if (normalizedDiff < 5) {
+        return '↔️ Too similar to previous. Rotate more before next capture.';
+      }
+
+      // Check speed (if GPS available)
+      if (last.latitude != 0 && prev.latitude != 0) {
+        final dt = last.timestamp.difference(prev.timestamp).inSeconds;
+        if (dt > 0) {
+          final dx = last.latitude - prev.latitude;
+          final dy = last.longitude - prev.longitude;
+          final dist = sqrt(dx * dx + dy * dy) * 111320; // meters
+          final speed = dist / dt; // m/s
+          if (speed > 2.0) {
+            return '🏃 Moving too fast (${speed.toStringAsFixed(1)} m/s). Slow down for sharp images.';
+          }
+        }
+      }
+    }
 
     // Find the largest gap
     final sectors = List<bool>.filled(36, false);
@@ -508,7 +628,6 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
       sectors[(sector - 1 + 36) % 36] = true;
     }
 
-    // Find biggest continuous gap
     int maxGapStart = 0, maxGapLen = 0, curStart = -1, curLen = 0;
     for (int i = 0; i < 72; i++) {
       if (!sectors[i % 36]) {
@@ -520,13 +639,13 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
       }
     }
 
-    if (maxGapLen == 0) return 'Good coverage. Keep scanning.';
+    if (maxGapLen == 0) return '🔄 Good coverage. Keep scanning for density.';
 
     final gapCenter = ((maxGapStart + maxGapLen / 2) % 36) * 10;
     final directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
     final dirIndex = ((gapCenter + 22.5) / 45).floor() % 8;
 
-    return 'Gap detected ${directions[dirIndex]} (${gapCenter.toInt()}°). Turn that way and capture.';
+    return '🧭 Gap ${directions[dirIndex]} (${gapCenter.toInt()}°). Turn that way and capture.';
   }
 }
 

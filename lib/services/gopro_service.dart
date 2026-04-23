@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -65,14 +66,30 @@ class GoProSettings {
   static const int presetGroupTimelapse = 1002;
 }
 
-class GoProService extends ChangeNotifier {
+/// Abstract camera service interface for future extensibility
+abstract class CameraServiceInterface {
+  List<CameraDevice> get devices;
+  bool get isScanning;
+  void startScan();
+  Future<void> connectToDevice(String id);
+  Future<void> triggerShutter(String id);
+  Future<void> stopShutter(String id);
+  Future<void> applySettingsToDevice(String id, Map<String, String> settings);
+}
+
+class GoProService extends ChangeNotifier implements CameraServiceInterface {
   final List<CameraDevice> _devices = [];
   final Map<String, BluetoothDevice> _bleDevices = {};
-  // Cache discovered characteristics per device
   final Map<String, Map<String, BluetoothCharacteristic>> _charCache = {};
   bool _isScanning = false;
 
+  // Keep-alive and polling timers per device
+  final Map<String, Timer> _keepAliveTimers = {};
+  final Map<String, Timer> _batteryPollTimers = {};
+
+  @override
   List<CameraDevice> get devices => _devices;
+  @override
   bool get isScanning => _isScanning;
 
   bool get _isMobilePlatform {
@@ -100,6 +117,7 @@ class GoProService extends ChangeNotifier {
 
   // ─── SCANNING ──────────────────────────────────────────────
 
+  @override
   void startScan() async {
     if (_isScanning) return;
 
@@ -158,6 +176,7 @@ class GoProService extends ChangeNotifier {
 
   // ─── CONNECTION ────────────────────────────────────────────
 
+  @override
   Future<void> connectToDevice(String id) async {
     if (!_isMobilePlatform) {
       final index = _devices.indexWhere((d) => d.id == id);
@@ -179,7 +198,7 @@ class GoProService extends ChangeNotifier {
           notifyListeners();
         }
 
-        // Discover services and cache all Open GoPro characteristics
+        // Discover services and cache characteristics
         List<BluetoothService> services = await device.discoverServices();
         final chars = <String, BluetoothCharacteristic>{};
 
@@ -198,7 +217,7 @@ class GoProService extends ChangeNotifier {
 
         _charCache[id] = chars;
 
-        // Subscribe to command & query notifications
+        // Subscribe to notifications
         if (chars['commandResp'] != null) {
           await chars['commandResp']!.setNotifyValue(true);
           chars['commandResp']!.onValueReceived.listen((value) {
@@ -218,54 +237,156 @@ class GoProService extends ChangeNotifier {
           });
         }
 
-        // Query battery level
-        if (chars['queryReq'] != null) {
-          // Get Status Value for Status ID 70 (0x46) = battery percentage
-          await chars['queryReq']!.write([0x02, 0x13, 0x46], withoutResponse: false);
-        }
+        // Register for push status updates (battery + storage)
+        await _registerStatusNotifications(id);
+
+        // Initial battery + storage query
+        await queryBatteryAndStorage(id);
+
+        // Start keep-alive timer (every 28s, GoPro timeout is ~60s)
+        _startKeepAlive(id);
+
+        // Start battery polling timer (every 30s)
+        _startBatteryPolling(id);
       }
     } catch (e) {
       debugPrint("Connection Error: $e");
     }
   }
 
+  /// Register for push-based status notifications
+  Future<void> _registerStatusNotifications(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['queryReq'] == null) return;
+    try {
+      // Register for status value updates (Query ID 0x53)
+      // Status 70 (0x46) = battery %, Status 54 (0x36) = SD remaining KB
+      await chars['queryReq']!.write(
+        [0x04, 0x53, 0x46, 0x36, 0x08],
+        withoutResponse: false,
+      );
+    } catch (e) {
+      debugPrint("Register status notifications error: $e");
+    }
+  }
+
+  /// Query battery level and storage
+  Future<void> queryBatteryAndStorage(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['queryReq'] == null) return;
+    try {
+      // Get Status Values: 70 (battery %), 54 (SD remaining KB), 8 (busy)
+      await chars['queryReq']!.write(
+        [0x04, 0x13, 0x46, 0x36, 0x08],
+        withoutResponse: false,
+      );
+    } catch (e) {
+      debugPrint("Battery query error: $e");
+    }
+  }
+
+  /// Send BLE keep-alive to prevent disconnection
+  void _startKeepAlive(String id) {
+    _keepAliveTimers[id]?.cancel();
+    _keepAliveTimers[id] = Timer.periodic(const Duration(seconds: 28), (_) async {
+      final chars = _charCache[id];
+      if (chars == null || chars['commandReq'] == null) return;
+      try {
+        // Keep Alive command
+        await chars['commandReq']!.write([0x01, 0x5B], withoutResponse: false);
+      } catch (e) {
+        debugPrint("Keep-alive error for $id: $e");
+      }
+    });
+  }
+
+  /// Poll battery every 30s
+  void _startBatteryPolling(String id) {
+    _batteryPollTimers[id]?.cancel();
+    _batteryPollTimers[id] = Timer.periodic(const Duration(seconds: 30), (_) {
+      queryBatteryAndStorage(id);
+    });
+  }
+
+  /// Parse TLV status response - FIXED: skip 3 header bytes
   void _handleQueryResponse(String deviceId, List<int> value) {
     if (value.length < 4) return;
-    // Parse TLV status responses
     try {
-      int i = 2; // Skip header bytes
+      // Response format: [totalLen, queryId, resultCode, ...TLV entries]
+      // Skip first 3 bytes: totalLen + queryId + result
+      int i = 3;
       while (i < value.length - 1) {
         int statusId = value[i];
         int statusLen = value[i + 1];
         if (i + 2 + statusLen > value.length) break;
 
+        final devIndex = _devices.indexWhere((d) => d.id == deviceId);
+        if (devIndex == -1) { i += 2 + statusLen; continue; }
+
         if (statusId == 0x46 && statusLen >= 1) {
-          // Battery percentage
+          // Status 70: Battery percentage (0-100)
           int battery = value[i + 2];
-          final devIndex = _devices.indexWhere((d) => d.id == deviceId);
-          if (devIndex != -1) {
+          if (battery >= 0 && battery <= 100) {
             _devices[devIndex] = _devices[devIndex].copyWith(batteryLevel: battery);
-            notifyListeners();
+            debugPrint("GoPro [$deviceId] Battery: $battery%");
           }
+        } else if (statusId == 0x36 && statusLen >= 4) {
+          // Status 54: SD card remaining space in KB (4-byte big-endian int)
+          int kb = (value[i + 2] << 24) | (value[i + 3] << 16) |
+                   (value[i + 4] << 8)  | value[i + 5];
+          String storage;
+          if (kb > 1048576) {
+            storage = '${(kb / 1048576).toStringAsFixed(1)} GB';
+          } else if (kb > 1024) {
+            storage = '${(kb / 1024).toStringAsFixed(0)} MB';
+          } else {
+            storage = '$kb KB';
+          }
+          _devices[devIndex] = _devices[devIndex].copyWith(storageRemaining: storage);
+          debugPrint("GoPro [$deviceId] Storage: $storage");
+        } else if (statusId == 0x08 && statusLen >= 1) {
+          // Status 8: Is camera busy/encoding
+          bool busy = value[i + 2] != 0;
+          debugPrint("GoPro [$deviceId] Busy: $busy");
         }
 
         i += 2 + statusLen;
       }
+      notifyListeners();
     } catch (e) {
       debugPrint("Query parse error: $e");
     }
   }
 
+  /// Disconnect a device cleanly
+  Future<void> disconnectDevice(String id) async {
+    _keepAliveTimers[id]?.cancel();
+    _keepAliveTimers.remove(id);
+    _batteryPollTimers[id]?.cancel();
+    _batteryPollTimers.remove(id);
+
+    if (_isMobilePlatform) {
+      try {
+        await _bleDevices[id]?.disconnect();
+      } catch (e) {
+        debugPrint("Disconnect error: $e");
+      }
+    }
+
+    final index = _devices.indexWhere((d) => d.id == id);
+    if (index != -1) {
+      _devices[index] = _devices[index].copyWith(isConnected: false, batteryLevel: 0);
+    }
+    _charCache.remove(id);
+    notifyListeners();
+  }
+
   // ─── MODE SWITCHING ────────────────────────────────────────
 
-  /// Switch a connected GoPro to Photo or Video preset group.
   Future<void> setPresetGroup(String id, int groupId) async {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
-
     try {
-      // Load Preset Group command (TLV):
-      // [totalLen, commandId=0x3E, valueLen, groupId_high, groupId_low]
       final highByte = (groupId >> 8) & 0xFF;
       final lowByte = groupId & 0xFF;
       await chars['commandReq']!.write(
@@ -278,51 +399,46 @@ class GoProService extends ChangeNotifier {
     }
   }
 
-  /// Switch camera to Photo mode
-  Future<void> setPhotoMode(String id) async {
-    await setPresetGroup(id, GoProSettings.presetGroupPhoto);
-  }
+  Future<void> setPhotoMode(String id) async =>
+      setPresetGroup(id, GoProSettings.presetGroupPhoto);
 
-  /// Switch camera to Video mode
-  Future<void> setVideoMode(String id) async {
-    await setPresetGroup(id, GoProSettings.presetGroupVideo);
-  }
+  Future<void> setVideoMode(String id) async =>
+      setPresetGroup(id, GoProSettings.presetGroupVideo);
 
-  /// Switch all connected cameras to a mode
+  Future<void> setTimeLapseMode(String id) async =>
+      setPresetGroup(id, GoProSettings.presetGroupTimelapse);
+
   Future<void> setAllCamerasMode(String mode) async {
     final groupId = mode == 'video'
         ? GoProSettings.presetGroupVideo
-        : GoProSettings.presetGroupPhoto;
+        : mode == 'timelapse'
+            ? GoProSettings.presetGroupTimelapse
+            : GoProSettings.presetGroupPhoto;
 
     for (final cam in _devices.where((d) => d.isConnected)) {
       await setPresetGroup(cam.id, groupId);
-      // Small delay between commands to avoid BLE congestion
       await Future.delayed(const Duration(milliseconds: 200));
     }
   }
 
   // ─── SETTINGS ──────────────────────────────────────────────
 
-  /// Write a single setting to a connected GoPro via the Settings characteristic.
   Future<void> _writeSetting(String id, int settingId, int value) async {
     final chars = _charCache[id];
     if (chars == null || chars['settingReq'] == null) return;
-
     try {
-      // Set Setting TLV: [totalLen, settingId, valueLen, value]
       await chars['settingReq']!.write(
         [0x03, settingId, 0x01, value],
         withoutResponse: false,
       );
       debugPrint("GoPro [$id] Set setting $settingId = $value");
-      // Small delay to let camera process
       await Future.delayed(const Duration(milliseconds: 150));
     } catch (e) {
       debugPrint("Set setting error ($settingId): $e");
     }
   }
 
-  /// Apply a full set of camera settings to a connected GoPro.
+  @override
   Future<void> applySettingsToDevice(String id, Map<String, String> settings) async {
     for (final entry in settings.entries) {
       final key = entry.key;
@@ -360,7 +476,6 @@ class GoProService extends ChangeNotifier {
     }
   }
 
-  /// Apply settings to ALL connected cameras
   Future<void> applySettingsToAll(Map<String, String> settings) async {
     for (final cam in _devices.where((d) => d.isConnected)) {
       await applySettingsToDevice(cam.id, settings);
@@ -369,12 +484,11 @@ class GoProService extends ChangeNotifier {
 
   // ─── SHUTTER CONTROL ──────────────────────────────────────
 
+  @override
   Future<void> triggerShutter(String id) async {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
-
     try {
-      // Shutter ON: [length=3, cmdId=1, subCmd=1, value=1]
       await chars['commandReq']!.write(
         [0x03, 0x01, 0x01, 0x01],
         withoutResponse: false,
@@ -384,12 +498,11 @@ class GoProService extends ChangeNotifier {
     }
   }
 
+  @override
   Future<void> stopShutter(String id) async {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
-
     try {
-      // Shutter OFF: [length=3, cmdId=1, subCmd=1, value=0]
       await chars['commandReq']!.write(
         [0x03, 0x01, 0x01, 0x00],
         withoutResponse: false,
@@ -399,10 +512,51 @@ class GoProService extends ChangeNotifier {
     }
   }
 
-  /// Trigger shutter on ALL connected cameras
   Future<void> triggerAllShutters() async {
     for (final cam in _devices.where((d) => d.isConnected)) {
       await triggerShutter(cam.id);
+    }
+  }
+
+  // ─── SD CARD FORMAT ────────────────────────────────────────
+
+  /// Format SD card on a connected GoPro (destructive!)
+  Future<void> formatSdCard(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['commandReq'] == null) return;
+    try {
+      // Format SD Card command
+      await chars['commandReq']!.write(
+        [0x01, 0x0A],
+        withoutResponse: false,
+      );
+      debugPrint("GoPro [$id] SD Card format triggered");
+    } catch (e) {
+      debugPrint("Format SD error: $e");
+    }
+  }
+
+  /// Format SD cards on ALL connected cameras
+  Future<void> formatAllSdCards() async {
+    for (final cam in _devices.where((d) => d.isConnected)) {
+      await formatSdCard(cam.id);
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  // ─── POWER ─────────────────────────────────────────────────
+
+  /// Power off a connected GoPro
+  Future<void> powerOff(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['commandReq'] == null) return;
+    try {
+      await chars['commandReq']!.write(
+        [0x01, 0x05],
+        withoutResponse: false,
+      );
+    } catch (e) {
+      debugPrint("Power off error: $e");
     }
   }
 
@@ -435,5 +589,12 @@ class GoProService extends ChangeNotifier {
       _devices[index] = _devices[index].copyWith(currentSettings: updatedSettings);
       notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    for (final timer in _keepAliveTimers.values) { timer.cancel(); }
+    for (final timer in _batteryPollTimers.values) { timer.cancel(); }
+    super.dispose();
   }
 }

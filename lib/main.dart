@@ -7,6 +7,7 @@ import 'services/gopro_service.dart';
 import 'services/project_service.dart';
 import 'services/trajectory_service.dart';
 import 'services/upload_service.dart';
+import 'services/cloud_storage_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +19,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => ProjectService()),
         ChangeNotifierProvider(create: (_) => TrajectoryService()),
         ChangeNotifierProvider(create: (_) => UploadService()),
+        ChangeNotifierProvider(create: (_) => CloudStorageService()),
       ],
       child: const KosmosApp(),
     ),

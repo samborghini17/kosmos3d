@@ -173,6 +173,43 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
                     ),
                   ),
                 const SizedBox(height: 16),
+                // ─── Preset Selector ───
+                Text(settings.translate('select_preset'),
+                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 42,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: settings.allPresets.map((preset) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          avatar: Text(preset.icon, style: const TextStyle(fontSize: 14)),
+                          label: Text(preset.name, style: const TextStyle(fontSize: 11)),
+                          backgroundColor: Colors.white.withValues(alpha: 0.06),
+                          side: BorderSide(color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
+                          onPressed: () {
+                            setState(() {
+                              _resolution = preset.settings['Resolution'] ?? _resolution;
+                              _fps = preset.settings['FPS'] ?? _fps;
+                              _lens = preset.settings['Lens'] ?? _lens;
+                              _isoMax = preset.settings['ISO Max'] ?? _isoMax;
+                              _shutter = preset.settings['Shutter'] ?? _shutter;
+                              _whiteBalance = preset.settings['White Balance'] ?? _whiteBalance;
+                              _bitrate = preset.settings['Bitrate'] ?? _bitrate;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('${preset.icon} ${preset.name} applied'),
+                                  backgroundColor: Theme.of(context).primaryColor, duration: const Duration(seconds: 1)),
+                            );
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 _buildSettingDropdown('Resolution', _resolution, ['1080p', '2.7K', '4K', '5.3K'], (v) => setState(() => _resolution = v)),
                 _buildSettingDropdown('FPS', _fps, ['24', '30', '60', '120'], (v) => setState(() => _fps = v)),
                 _buildSettingDropdown('Lens', _lens, ['Linear', 'Wide', 'SuperView'], (v) => setState(() => _lens = v)),

@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../models/scan_project.dart';
 import '../services/upload_service.dart';
+import '../services/cloud_storage_service.dart';
 import '../services/trajectory_service.dart';
 import '../providers/settings_provider.dart';
 
@@ -83,6 +84,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   Widget build(BuildContext context) {
     context.watch<SettingsProvider>();
     final uploadService = context.watch<UploadService>();
+    final cloud = context.watch<CloudStorageService>();
     final primaryColor = Theme.of(context).primaryColor;
 
     return Scaffold(
@@ -102,7 +104,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
               }),
             ),
           ] else ...[
-            // Upload all
+            // Upload to B2
+            if (cloud.isConfigured)
+              IconButton(
+                icon: const Icon(Icons.cloud),
+                tooltip: 'Upload to B2',
+                onPressed: _imageFiles.isEmpty
+                    ? null
+                    : () => _showB2UploadDialog(context, cloud),
+              ),
+            // Upload to server
             IconButton(
               icon: const Icon(Icons.cloud_upload),
               tooltip: 'Upload to server',
@@ -174,11 +185,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       ),
                     ),
                     // Upload progress bar
-                    if (uploadService.isUploading) ...[
-                      LinearProgressIndicator(value: uploadService.progress, color: primaryColor),
+                    if (uploadService.isUploading || cloud.isUploading) ...[
+                      LinearProgressIndicator(
+                        value: uploadService.isUploading ? uploadService.progress : cloud.progress,
+                        color: primaryColor,
+                      ),
                       Padding(
                         padding: const EdgeInsets.all(8),
-                        child: Text(uploadService.statusMessage, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                        child: Text(
+                          uploadService.isUploading ? uploadService.statusMessage : cloud.statusMessage,
+                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
                       ),
                     ],
                     // Grid
@@ -341,6 +358,30 @@ class _GalleryScreenState extends State<GalleryScreen> {
               uploadService.uploadProject(widget.project.id, widget.project.name);
             },
             child: const Text('Upload'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showB2UploadDialog(BuildContext context, CloudStorageService cloud) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('☁️ Upload to Backblaze B2', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Upload ${_imageFiles.length} files + trajectory from "${widget.project.name}" to your B2 bucket?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              cloud.uploadProject(widget.project.id, widget.project.name);
+            },
+            child: const Text('Upload to B2'),
           ),
         ],
       ),
