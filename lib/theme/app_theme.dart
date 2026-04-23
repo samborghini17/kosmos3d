@@ -4,7 +4,7 @@ class AppTheme {
   // Brand Colors based on Kreativ Institute inspiration
   static const Color backgroundDark = Color(0xFF0D0D0D); // Deep dark background
   static const Color surfaceDark = Color(0xFF1A1A1A); // Slightly lighter for cards
-  static const Color neonGreen = Color(0xFFCCFF00); // KIO inspired Neon Green
+  static const Color neonGreen = Color(0xFF00FF41); // KIO inspired Neon Green (Matrix style)
   static const Color textLight = Color(0xFFEEEEEE);
   static const Color textMuted = Color(0xFF9E9E9E);
   

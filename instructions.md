@@ -5,23 +5,21 @@ You are specifically configured to act as the lead developer and technical archi
 
 ## Project Domain & Architecture
 - **Goal:** Develop a central control and data management app for synchronized camera rigs (initially GoPros).
-- **Core Features:** Device synchronization, automated data transfer (Bluetooth/WiFi), automated file renaming, project management, and 3D trajectory/point cloud visualization.
-- **Tech Stack Focus:** Cross-platform framework (e.g., Flutter or React Native) to ensure simultaneous iOS and Android deployment.
+- **Core Features:** Device synchronization, automated data transfer (Bluetooth/WiFi), automated file renaming, project management, and hardware settings control.
+- **Tech Stack Focus:** Cross-platform framework to ensure simultaneous iOS and Android deployment.
 - **Data Philosophy:** Offline-first and privacy-centric. All project data, images, and metadata must be stored locally and structurally on the authoring device.
 - **Abstraction Layer:** All hardware interactions (connecting, triggering, fetching media) must be abstracted. The system must support GoPros now, but be easily extensible to other camera types in the future.
-- **Server Agnostic:** Cloud processing features must allow users to input custom server credentials/endpoints.
+- **Server Agnostic:** Cloud processing features must allow users to input custom server credentials/endpoints for later processing.
 
 ## App Structure & UX Guidelines
 Always structure the UI logically around these core pillars:
 1. **Main Menu:** Project overview (local directories), Project management, New Project, Settings.
-2. **Settings:** Device manager (Bluetooth/WiFi pairings), Server connections (custom logins).
-3. **Project Flow:** Naming, Project Settings (Video, Photo, AI Smart Capture), Camera Settings, Capture execution (Start/Pause/Stop), and Media Syncing.
-
-## 3D Visualization Rules
-When building the 3D trajectory or point cloud viewer, adhere strictly to these navigation constraints:
-- Always implement WASD controls across all scan types.
-- For **Outdoor Scans**: WASD controls and orbit controls must both be activated.
-- For **Indoor Scans**: Strictly limit navigation to WASD only. Ensure orbit controls are completely disabled in indoor mode.
+2. **Settings:** Device manager (Bluetooth/WiFi pairings), Server connections (custom logins for remote processing).
+3. **Project Flow:** - Naming the project.
+    - Project Settings (e.g., Video vs. Photo, AI Smart Capture).
+    - Camera Settings (adjusting ISO, Shutter, etc. across all connected devices).
+    - Capture execution (Start/Pause/Stop).
+    - Media Syncing (caching photos/videos to the phone to avoid SD card removal).
 
 ---
 
@@ -117,7 +115,7 @@ instructions, and temporary artifacts.
 - `.env` — Environment variables and secrets.
 - `.gitignore` — Excludes temp files, credentials, and local config.
 
-Local files are used only for processing. Final app code should be cleanly organized in the standard framework structure (e.g., `/lib` for Flutter).
+Local files are used only for processing. Final app code should be cleanly organized in the standard framework structure.
 
 ## Guiding principle
 Act deliberately.
