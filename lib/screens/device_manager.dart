@@ -71,37 +71,85 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
         ],
       ),
       body: SafeArea(
-        child: cameras.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.bluetooth_searching, size: 64, color: Colors.white.withValues(alpha: 0.2)),
-                    const SizedBox(height: 16),
-                    Text(
-                      goPro.isScanning ? settings.translate('scanning') : settings.translate('no_cameras_found'),
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 16),
-                    ),
-                    if (!goPro.isScanning) ...[
-                      const SizedBox(height: 12),
-                      ElevatedButton.icon(
-                        onPressed: () => _checkLocationAndScan(goPro),
-                        icon: const Icon(Icons.search),
-                        label: const Text('Scan for Devices'),
-                      ),
-                    ],
-                  ],
-                ),
-              )
-            : ListView.builder(
-                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                padding: const EdgeInsets.all(16),
-                itemCount: cameras.length,
-                itemBuilder: (context, index) {
-                  final cam = cameras[index];
-                  return _buildCameraCard(context, cam, goPro, settings);
-                },
+        child: Column(
+          children: [
+            // ─── Connection Guide Banner ───
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.2)),
               ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 18, color: Theme.of(context).primaryColor),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'No system Bluetooth pairing needed! Just make sure your GoPros have Wireless Connections enabled, then tap Scan → tap a camera to connect.',
+                      style: TextStyle(color: Theme.of(context).primaryColor.withValues(alpha: 0.8), fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ─── Camera List ───
+            Expanded(
+              child: cameras.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.bluetooth_searching, size: 64,
+                              color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.2)),
+                          const SizedBox(height: 16),
+                          Text(
+                            goPro.isScanning ? settings.translate('scanning') : settings.translate('no_cameras_found'),
+                            style: TextStyle(
+                                color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.5),
+                                fontSize: 16),
+                          ),
+                          if (!goPro.isScanning) ...[
+                            const SizedBox(height: 12),
+                            ElevatedButton.icon(
+                              onPressed: () => _checkLocationAndScan(goPro),
+                              icon: const Icon(Icons.search),
+                              label: const Text('Scan for Devices'),
+                            ),
+                            const SizedBox(height: 24),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 32),
+                              child: Text(
+                                '📋 Before your first scan:\n'
+                                '1. Mount your phone on the rig\n'
+                                '2. Power on all GoPro cameras\n'
+                                '3. Enable Wireless Connections on each GoPro\n'
+                                '4. Tap "Scan for Devices" above\n'
+                                '5. Tap each camera to connect',
+                                style: TextStyle(
+                                    color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.35),
+                                    fontSize: 13, height: 1.6),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: cameras.length,
+                      itemBuilder: (context, index) {
+                        final cam = cameras[index];
+                        return _buildCameraCard(context, cam, goPro, settings);
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -312,6 +360,58 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                     label: settings.translate('power_off'),
                     color: Colors.redAccent,
                     onTap: () => goPro.powerOff(cam.id),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Third row: WiFi, GPS, Locate
+              Row(
+                children: [
+                  _buildActionButton(
+                    icon: Icons.wifi,
+                    label: 'WiFi AP',
+                    onTap: () async {
+                      await goPro.enableWifi(cam.id);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('WiFi AP enabled — connect your phone to GoPro WiFi to download media'),
+                              backgroundColor: Colors.green),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _buildActionButton(
+                    icon: Icons.gps_fixed,
+                    label: 'GPS On',
+                    onTap: () async {
+                      await goPro.setGps(cam.id, true);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('GPS enabled — photos will be geo-tagged'),
+                              backgroundColor: Colors.green),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _buildActionButton(
+                    icon: Icons.volume_up,
+                    label: 'Locate',
+                    onTap: () => goPro.locateCamera(cam.id, true),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildActionButton(
+                    icon: Icons.bookmark_add,
+                    label: 'HiLight',
+                    onTap: () async {
+                      await goPro.addHiLightTag(cam.id);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('HiLight tag added'), backgroundColor: Colors.green, duration: Duration(seconds: 1)),
+                        );
+                      }
+                    },
                   ),
                 ],
               ),

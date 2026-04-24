@@ -520,14 +520,23 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
 
   // ─── SD CARD FORMAT ────────────────────────────────────────
 
-  /// Format SD card on a connected GoPro (destructive!)
+  /// Format SD card — MUST stop recording first
   Future<void> formatSdCard(String id) async {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
     try {
-      // Format SD Card command
+      // 1. First, stop any recording
+      await stopShutter(id);
+      await Future.delayed(const Duration(milliseconds: 500));
+      // 2. Switch to idle mode to ensure camera isn't busy
       await chars['commandReq']!.write(
-        [0x01, 0x0A],
+        [0x03, 0x01, 0x01, 0x00], // Shutter off
+        withoutResponse: false,
+      );
+      await Future.delayed(const Duration(milliseconds: 300));
+      // 3. Format SD Card command (Command ID 0x0A, no params)
+      await chars['commandReq']!.write(
+        [0x02, 0x3C, 0x00], // Length 2, Media: Format SD
         withoutResponse: false,
       );
       debugPrint("GoPro [$id] SD Card format triggered");
@@ -540,7 +549,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
   Future<void> formatAllSdCards() async {
     for (final cam in _devices.where((d) => d.isConnected)) {
       await formatSdCard(cam.id);
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 1000));
     }
   }
 
@@ -551,12 +560,140 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
     try {
+      // Sleep/Power Off command
       await chars['commandReq']!.write(
         [0x01, 0x05],
         withoutResponse: false,
       );
+      debugPrint("GoPro [$id] Power off sent");
     } catch (e) {
       debugPrint("Power off error: $e");
+    }
+  }
+
+  /// Put camera to sleep
+  Future<void> sleep(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['commandReq'] == null) return;
+    try {
+      await chars['commandReq']!.write(
+        [0x01, 0x05], // Sleep command
+        withoutResponse: false,
+      );
+    } catch (e) {
+      debugPrint("Sleep error: $e");
+    }
+  }
+
+  // ─── WIFI COMMANDS ────────────────────────────────────────
+
+  /// Enable WiFi AP on the camera (for media download)
+  Future<void> enableWifi(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['commandReq'] == null) return;
+    try {
+      // AP Mode: ON
+      await chars['commandReq']!.write(
+        [0x03, 0x17, 0x01, 0x01],
+        withoutResponse: false,
+      );
+      debugPrint("GoPro [$id] WiFi AP enabled");
+    } catch (e) {
+      debugPrint("WiFi enable error: $e");
+    }
+  }
+
+  /// Disable WiFi AP on the camera
+  Future<void> disableWifi(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['commandReq'] == null) return;
+    try {
+      await chars['commandReq']!.write(
+        [0x03, 0x17, 0x01, 0x00],
+        withoutResponse: false,
+      );
+      debugPrint("GoPro [$id] WiFi AP disabled");
+    } catch (e) {
+      debugPrint("WiFi disable error: $e");
+    }
+  }
+
+  /// Enable WiFi on ALL connected cameras
+  Future<void> enableAllWifi() async {
+    for (final cam in _devices.where((d) => d.isConnected)) {
+      await enableWifi(cam.id);
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+  }
+
+  // ─── GPS / LOCATION ──────────────────────────────────────
+
+  /// Enable GPS on camera (useful for geo-tagging Gaussian Splat data)
+  Future<void> setGps(String id, bool enabled) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['settingReq'] == null) return;
+    try {
+      // Setting ID 83: GPS on/off
+      await chars['settingReq']!.write(
+        [0x03, 0x53, 0x01, enabled ? 0x01 : 0x00],
+        withoutResponse: false,
+      );
+      debugPrint("GoPro [$id] GPS: ${enabled ? 'ON' : 'OFF'}");
+    } catch (e) {
+      debugPrint("GPS toggle error: $e");
+    }
+  }
+
+  // ─── LOCATE / BEEP ───────────────────────────────────────
+
+  /// Make camera beep to locate it
+  Future<void> locateCamera(String id, bool start) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['commandReq'] == null) return;
+    try {
+      await chars['commandReq']!.write(
+        [0x03, 0x16, 0x01, start ? 0x01 : 0x00],
+        withoutResponse: false,
+      );
+      debugPrint("GoPro [$id] Locate: ${start ? 'ON' : 'OFF'}");
+    } catch (e) {
+      debugPrint("Locate error: $e");
+    }
+  }
+
+  // ─── MEDIA INFO ──────────────────────────────────────────
+
+  /// Get the last captured file name
+  Future<String?> getLastMediaFile(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['queryReq'] == null) return null;
+    try {
+      // Query media count / last file info
+      await chars['queryReq']!.write(
+        [0x02, 0x13, 0x3D], // Query status 61 (media count)
+        withoutResponse: false,
+      );
+      return null; // Response comes async via notification
+    } catch (e) {
+      debugPrint("Media query error: $e");
+      return null;
+    }
+  }
+
+  // ─── HIGHLIGHT / TAG ─────────────────────────────────────
+
+  /// Add a HiLight tag at current moment (useful for marking key captures)
+  Future<void> addHiLightTag(String id) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['commandReq'] == null) return;
+    try {
+      await chars['commandReq']!.write(
+        [0x01, 0x18], // HiLight command
+        withoutResponse: false,
+      );
+      debugPrint("GoPro [$id] HiLight tag added");
+    } catch (e) {
+      debugPrint("HiLight error: $e");
     }
   }
 

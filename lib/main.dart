@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
 import 'screens/main_menu.dart';
 import 'providers/settings_provider.dart';
@@ -35,11 +36,116 @@ class KosmosApp extends StatelessWidget {
       builder: (context, settings, _) {
         return MaterialApp(
           title: 'KOSMOS 3D',
-          theme: AppTheme.darkTheme,
-          home: const MainMenuScreen(),
+          // Follow system dark/light mode
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: ThemeMode.system,
+          home: const _StartupWrapper(),
           debugShowCheckedModeBanner: false,
         );
       },
     );
   }
+}
+
+/// Wraps the main menu to show first-launch setup guide
+class _StartupWrapper extends StatefulWidget {
+  const _StartupWrapper();
+
+  @override
+  State<_StartupWrapper> createState() => _StartupWrapperState();
+}
+
+class _StartupWrapperState extends State<_StartupWrapper> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkFirstLaunch());
+  }
+
+  Future<void> _checkFirstLaunch() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeenSetup = prefs.getBool('has_seen_setup') ?? false;
+    if (!hasSeenSetup && mounted) {
+      _showSetupGuide();
+      await prefs.setBool('has_seen_setup', true);
+    }
+  }
+
+  void _showSetupGuide() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        final bgColor = isDark ? const Color(0xFF1A1A1A) : Colors.white;
+        final textColor = isDark ? Colors.white : Colors.black87;
+        final mutedColor = isDark ? Colors.white70 : Colors.black54;
+
+        return AlertDialog(
+          backgroundColor: bgColor,
+          title: Column(
+            children: [
+              const Text('🌌', style: TextStyle(fontSize: 40)),
+              const SizedBox(height: 8),
+              Text('Welcome to KOSMOS 3D',
+                  style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _setupStep(Icons.phone_android, 'Mount your phone',
+                    'Attach your phone to the rig\'s phone mount for accurate sensor tracking (gyroscope, GPS, compass).',
+                    textColor, mutedColor),
+                const SizedBox(height: 14),
+                _setupStep(Icons.bluetooth, 'Power on GoPros',
+                    'Turn on all GoPro cameras and make sure Wireless Connections are enabled in each camera\'s settings.',
+                    textColor, mutedColor),
+                const SizedBox(height: 14),
+                _setupStep(Icons.search, 'Scan & Connect',
+                    'Go to Device Manager → tap "Scan" → tap each camera to connect. No system Bluetooth pairing needed — the app handles everything!',
+                    textColor, mutedColor),
+                const SizedBox(height: 14),
+                _setupStep(Icons.cloud, 'Cloud Storage (Optional)',
+                    'Go to Settings → Cloud Storage to set up Backblaze B2 for automatic uploads.',
+                    textColor, mutedColor),
+              ],
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Got it — Let\'s Go!'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _setupStep(IconData icon, String title, String desc, Color textColor, Color mutedColor) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 22, color: AppTheme.neonGreen),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 2),
+              Text(desc, style: TextStyle(color: mutedColor, fontSize: 12)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => const MainMenuScreen();
 }

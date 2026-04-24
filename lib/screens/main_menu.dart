@@ -12,6 +12,7 @@ import 'capture_session.dart';
 import 'gallery_screen.dart';
 import 'point_cloud_preview.dart';
 import 'qr_config_screen.dart';
+import 'device_manager.dart';
 
 class MainMenuScreen extends StatelessWidget {
   const MainMenuScreen({super.key});
@@ -67,7 +68,7 @@ class MainMenuScreen extends StatelessWidget {
                     _quickTool(context, Icons.view_in_ar, settings.translate('trajectory_preview'), () =>
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const PointCloudPreviewScreen()))),
                     _quickTool(context, Icons.camera_alt, settings.translate('device_manager'), () =>
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const DeviceManagerScreen()))),
                   ],
                 ),
               ),
