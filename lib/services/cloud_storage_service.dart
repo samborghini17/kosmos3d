@@ -56,8 +56,8 @@ class CloudStorageService extends ChangeNotifier {
     required String keyId,
     required String applicationKey,
     required String bucketName,
-    String endpoint = 's3.us-west-004.backblazeb2.com',
-    String region = 'us-west-004',
+    String endpoint = 's3.eu-central-003.backblazeb2.com',
+    String region = 'eu-central-003',
   }) async {
     await _secureStorage.write(key: _keyId, value: keyId);
     await _secureStorage.write(key: _keySecret, value: applicationKey);
@@ -74,8 +74,8 @@ class CloudStorageService extends ChangeNotifier {
     return {
       'keyId': await _secureStorage.read(key: _keyId) ?? '',
       'bucketName': await _secureStorage.read(key: _keyBucket) ?? '',
-      'endpoint': await _secureStorage.read(key: _keyEndpoint) ?? 's3.us-west-004.backblazeb2.com',
-      'region': await _secureStorage.read(key: _keyRegion) ?? 'us-west-004',
+      'endpoint': await _secureStorage.read(key: _keyEndpoint) ?? 's3.eu-central-003.backblazeb2.com',
+      'region': await _secureStorage.read(key: _keyRegion) ?? 'eu-central-003',
     };
   }
 

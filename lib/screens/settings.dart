@@ -91,13 +91,26 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
 
-            // ─── SERVER CONNECTION ──────────────────────
-            _buildSectionHeader(context, settings.translate('server_connection')),
-            _buildSettingCard(context,
-              title: settings.translate('server_login'),
-              subtitle: settings.translate('server_login_desc'),
-              icon: Icons.cloud_sync,
-              onTap: () => showDialog(context: context, builder: (_) => const ServerConfigDialog()),
+            // ─── FUTURE: GS PROCESSING ──────────────────
+            _buildSectionHeader(context, 'Gaussian Splat Processing'),
+            GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                leading: const Icon(Icons.cloud_sync, color: Colors.white38, size: 28),
+                title: const Text('Processing Server',
+                    style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white38)),
+                subtitle: Text('Coming soon — COLMAP / GS processing integration',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.3))),
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text('ROADMAP', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 1)),
+                ),
+              ),
             ),
           ],
         ),
@@ -261,8 +274,8 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
   final _keyIdCtrl = TextEditingController();
   final _appKeyCtrl = TextEditingController();
   final _bucketCtrl = TextEditingController();
-  final _endpointCtrl = TextEditingController(text: 's3.us-west-004.backblazeb2.com');
-  final _regionCtrl = TextEditingController(text: 'us-west-004');
+  final _endpointCtrl = TextEditingController(text: 's3.eu-central-003.backblazeb2.com');
+  final _regionCtrl = TextEditingController(text: 'eu-central-003');
   bool _obscureKey = true;
   bool _isTesting = false;
   bool _isSaving = false;
@@ -280,8 +293,8 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
     setState(() {
       _keyIdCtrl.text = creds['keyId'] ?? '';
       _bucketCtrl.text = creds['bucketName'] ?? '';
-      _endpointCtrl.text = creds['endpoint'] ?? 's3.us-west-004.backblazeb2.com';
-      _regionCtrl.text = creds['region'] ?? 'us-west-004';
+      _endpointCtrl.text = creds['endpoint'] ?? 's3.eu-central-003.backblazeb2.com';
+      _regionCtrl.text = creds['region'] ?? 'eu-central-003';
     });
   }
 
