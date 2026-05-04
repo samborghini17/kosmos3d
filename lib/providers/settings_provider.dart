@@ -22,9 +22,21 @@ class CameraPreset {
 
 class SettingsProvider extends ChangeNotifier {
   String _currentLanguage = 'en';
+  ThemeMode _themeMode = ThemeMode.system;
   List<CameraPreset> _customPresets = [];
+  bool _hapticFeedback = true;
+  bool _autoUpload = false;
+  bool _recordBarometer = true;
+  int _sensorRate = 50; // ms
+  int _gpsRate = 2; // seconds
 
   String get currentLanguage => _currentLanguage;
+  ThemeMode get themeMode => _themeMode;
+  bool get hapticFeedback => _hapticFeedback;
+  bool get autoUpload => _autoUpload;
+  bool get recordBarometer => _recordBarometer;
+  int get sensorRate => _sensorRate;
+  int get gpsRate => _gpsRate;
 
   // ─── BUILT-IN PRESETS ────────────────────────────────────
   static const List<CameraPreset> builtInPresets = [
@@ -73,6 +85,19 @@ class SettingsProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _currentLanguage = prefs.getString('language') ?? 'en';
 
+    // Theme mode
+    final themeStr = prefs.getString('theme_mode') ?? 'system';
+    _themeMode = themeStr == 'dark' ? ThemeMode.dark
+        : themeStr == 'light' ? ThemeMode.light
+        : ThemeMode.system;
+
+    // Preferences
+    _hapticFeedback = prefs.getBool('haptic_feedback') ?? true;
+    _autoUpload = prefs.getBool('auto_upload') ?? false;
+    _recordBarometer = prefs.getBool('record_barometer') ?? true;
+    _sensorRate = prefs.getInt('sensor_rate') ?? 50;
+    _gpsRate = prefs.getInt('gps_rate') ?? 2;
+
     // Load custom presets
     final presetsJson = prefs.getString('custom_presets');
     if (presetsJson != null) {
@@ -84,6 +109,18 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ─── THEME ──────────────────────────────────────────────
+
+  void setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme_mode', mode == ThemeMode.dark ? 'dark'
+        : mode == ThemeMode.light ? 'light' : 'system');
+    notifyListeners();
+  }
+
+  // ─── LANGUAGE ───────────────────────────────────────────
+
   void toggleLanguage() async {
     _currentLanguage = _currentLanguage == 'en' ? 'de' : 'en';
     final prefs = await SharedPreferences.getInstance();
@@ -93,6 +130,43 @@ class SettingsProvider extends ChangeNotifier {
 
   String translate(String key) {
     return AppTranslations.get(_currentLanguage, key);
+  }
+
+  // ─── APP SETTINGS ──────────────────────────────────────
+
+  void setHapticFeedback(bool value) async {
+    _hapticFeedback = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('haptic_feedback', value);
+    notifyListeners();
+  }
+
+  void setAutoUpload(bool value) async {
+    _autoUpload = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_upload', value);
+    notifyListeners();
+  }
+
+  void setRecordBarometer(bool value) async {
+    _recordBarometer = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('record_barometer', value);
+    notifyListeners();
+  }
+
+  void setSensorRate(int ms) async {
+    _sensorRate = ms;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('sensor_rate', ms);
+    notifyListeners();
+  }
+
+  void setGpsRate(int seconds) async {
+    _gpsRate = seconds;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('gps_rate', seconds);
+    notifyListeners();
   }
 
   // ─── PRESET MANAGEMENT ──────────────────────────────────

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/glass_card.dart';
 import 'device_manager.dart';
 import '../providers/settings_provider.dart';
 import '../services/cloud_storage_service.dart';
+import '../services/rig_geometry_service.dart';
+import '../services/lidar_service.dart';
+import '../services/gopro_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -13,6 +15,8 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
     final cloud = context.watch<CloudStorageService>();
+    final rig = context.watch<RigGeometryService>();
+    final lidar = context.watch<LidarService>();
 
     return Scaffold(
       appBar: AppBar(title: Text(settings.translate('settings'))),
@@ -20,28 +24,47 @@ class SettingsScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
-            // ─── APP SETTINGS ───────────────────────────
-            _buildSectionHeader(context, settings.translate('settings')),
+            // ─── APPEARANCE ─────────────────────────────
+            _buildSectionHeader(context, 'Appearance'),
             GlassCard(
               margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                leading: Text(
-                  settings.currentLanguage == 'en' ? '🇬🇧' : '🇩🇪',
-                  style: const TextStyle(fontSize: 28),
-                ),
-                title: Text(settings.translate('language'),
-                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
-                subtitle: Text(settings.currentLanguage == 'en' ? 'English' : 'Deutsch',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
-                trailing: Switch(
-                  value: settings.currentLanguage == 'de',
-                  activeThumbColor: Theme.of(context).primaryColor,
-                  onChanged: (_) => context.read<SettingsProvider>().toggleLanguage(),
-                ),
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: const Icon(Icons.brightness_6, size: 24),
+                    title: const Text('Theme', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(settings.themeMode == ThemeMode.system ? 'System Default'
+                        : settings.themeMode == ThemeMode.dark ? 'Dark' : 'Light'),
+                    trailing: SegmentedButton<ThemeMode>(
+                      segments: const [
+                        ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.phone_android, size: 16)),
+                        ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 16)),
+                        ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode, size: 16)),
+                      ],
+                      selected: {settings.themeMode},
+                      onSelectionChanged: (v) => settings.setThemeMode(v.first),
+                      style: ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: Text(settings.currentLanguage == 'en' ? '🇬🇧' : '🇩🇪', style: const TextStyle(fontSize: 24)),
+                    title: Text(settings.translate('language'), style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(settings.currentLanguage == 'en' ? 'English' : 'Deutsch'),
+                    trailing: Switch(
+                      value: settings.currentLanguage == 'de',
+                      activeColor: Theme.of(context).primaryColor,
+                      onChanged: (_) => settings.toggleLanguage(),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
             // ─── DEVICE MANAGER ─────────────────────────
             _buildSectionHeader(context, settings.translate('device_manager')),
@@ -49,10 +72,9 @@ class SettingsScreen extends StatelessWidget {
               title: settings.translate('device_manager'),
               subtitle: settings.translate('manage_gopros'),
               icon: Icons.camera_alt,
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const DeviceManagerScreen())),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DeviceManagerScreen())),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
             // ─── SCANNING PRESETS ───────────────────────
             _buildSectionHeader(context, settings.translate('scanning_presets')),
@@ -61,13 +83,10 @@ class SettingsScreen extends StatelessWidget {
               child: ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 leading: Text(preset.icon, style: const TextStyle(fontSize: 24)),
-                title: Text(preset.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 14)),
-                subtitle: Text(
-                  '${preset.settings['Resolution']} · ${preset.settings['FPS']}fps · ${preset.settings['Lens']}',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
-                ),
-                trailing: const Icon(Icons.chevron_right, color: Colors.white38, size: 20),
+                title: Text(preset.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: Text('${preset.settings['Resolution']} · ${preset.settings['FPS']}fps · ${preset.settings['Lens']}',
+                    style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.5), fontSize: 12)),
+                trailing: const Icon(Icons.chevron_right, size: 20),
                 onTap: () => _showPresetDetail(context, preset, settings),
               ),
             )),
@@ -77,19 +96,127 @@ class SettingsScreen extends StatelessWidget {
               icon: Icons.add_circle_outline,
               onTap: () => _showCreatePresetDialog(context, settings),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
-            // ─── CLOUD STORAGE ──────────────────────────
+            // ─── SENSOR SETTINGS ────────────────────────
+            _buildSectionHeader(context, 'Sensor & Capture'),
+            GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    secondary: const Icon(Icons.vibration, size: 22),
+                    title: const Text('Haptic Feedback', style: TextStyle(fontSize: 14)),
+                    subtitle: const Text('Vibrate on capture events', style: TextStyle(fontSize: 12)),
+                    value: settings.hapticFeedback,
+                    activeColor: Theme.of(context).primaryColor,
+                    onChanged: (v) => settings.setHapticFeedback(v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    secondary: const Icon(Icons.speed, size: 22),
+                    title: const Text('Barometer (Altitude)', style: TextStyle(fontSize: 14)),
+                    subtitle: const Text('Record pressure sensor for elevation', style: TextStyle(fontSize: 12)),
+                    value: settings.recordBarometer,
+                    activeColor: Theme.of(context).primaryColor,
+                    onChanged: (v) => settings.setRecordBarometer(v),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: const Icon(Icons.sensors, size: 22),
+                    title: const Text('IMU Sample Rate', style: TextStyle(fontSize: 14)),
+                    subtitle: Text('${settings.sensorRate}ms (${(1000 / settings.sensorRate).round()} Hz)', style: const TextStyle(fontSize: 12)),
+                    trailing: DropdownButton<int>(
+                      value: settings.sensorRate,
+                      underline: const SizedBox(),
+                      items: const [
+                        DropdownMenuItem(value: 20, child: Text('20ms (50Hz)')),
+                        DropdownMenuItem(value: 50, child: Text('50ms (20Hz)')),
+                        DropdownMenuItem(value: 100, child: Text('100ms (10Hz)')),
+                      ],
+                      onChanged: (v) { if (v != null) settings.setSensorRate(v); },
+                    ),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: const Icon(Icons.gps_fixed, size: 22),
+                    title: const Text('GPS Poll Rate', style: TextStyle(fontSize: 14)),
+                    subtitle: Text('Every ${settings.gpsRate}s', style: const TextStyle(fontSize: 12)),
+                    trailing: DropdownButton<int>(
+                      value: settings.gpsRate,
+                      underline: const SizedBox(),
+                      items: const [
+                        DropdownMenuItem(value: 1, child: Text('1s (fast)')),
+                        DropdownMenuItem(value: 2, child: Text('2s (normal)')),
+                        DropdownMenuItem(value: 5, child: Text('5s (battery)')),
+                      ],
+                      onChanged: (v) { if (v != null) settings.setGpsRate(v); },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ─── RIG GEOMETRY & NAMING ──────────────────
+            _buildSectionHeader(context, 'Rig Layout & File Naming'),
+            GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: const Icon(Icons.text_fields, size: 22),
+                    title: const Text('Naming Template', style: TextStyle(fontSize: 14)),
+                    subtitle: Text(rig.namingTemplate, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                    trailing: const Icon(Icons.edit, size: 18),
+                    onTap: () => _showNamingDialog(context, rig),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: const Icon(Icons.view_in_ar, size: 22),
+                    title: Text('Camera Positions (${rig.cameras.length})', style: const TextStyle(fontSize: 14)),
+                    subtitle: const Text('Define rig offsets for each camera', style: TextStyle(fontSize: 12)),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RigLayoutScreen())),
+                  ),
+                ],
+              ),
+            ),
+            if (lidar.isAvailable) ...[
+              GlassCard(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: Icon(Icons.radar, size: 28, color: Theme.of(context).primaryColor),
+                  title: const Text('LiDAR Scanner', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  subtitle: Text(lidar.isCapturing ? 'Capturing (${lidar.depthFrameCount} frames)' : 'Available — auto-captures with photos'),
+                  trailing: Icon(Icons.check_circle, color: Theme.of(context).primaryColor, size: 20),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
             _buildSectionHeader(context, settings.translate('cloud_storage')),
             _buildSettingCard(context,
               title: 'Backblaze B2',
-              subtitle: cloud.isConfigured
-                  ? settings.translate('cloud_configured')
-                  : settings.translate('cloud_not_configured'),
+              subtitle: cloud.isConfigured ? settings.translate('cloud_configured') : settings.translate('cloud_not_configured'),
               icon: Icons.cloud,
               onTap: () => showDialog(context: context, builder: (_) => const CloudStorageDialog()),
             ),
-            const SizedBox(height: 24),
+            GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                secondary: const Icon(Icons.cloud_upload, size: 22),
+                title: const Text('Auto-Upload', style: TextStyle(fontSize: 14)),
+                subtitle: const Text('Upload to B2 after each session', style: TextStyle(fontSize: 12)),
+                value: settings.autoUpload,
+                activeColor: Theme.of(context).primaryColor,
+                onChanged: cloud.isConfigured ? (v) => settings.setAutoUpload(v) : null,
+              ),
+            ),
+            const SizedBox(height: 16),
 
             // ─── FUTURE: GS PROCESSING ──────────────────
             _buildSectionHeader(context, 'Gaussian Splat Processing'),
@@ -97,19 +224,51 @@ class SettingsScreen extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                leading: const Icon(Icons.cloud_sync, color: Colors.white38, size: 28),
-                title: const Text('Processing Server',
-                    style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white38)),
-                subtitle: Text('Coming soon — COLMAP / GS processing integration',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.3))),
+                leading: const Icon(Icons.cloud_sync, size: 28),
+                title: Text('Processing Server', style: TextStyle(fontWeight: FontWeight.w600,
+                    color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.3))),
+                subtitle: Text('Coming soon — COLMAP / GS processing',
+                    style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.2))),
                 trailing: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text('ROADMAP', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 1)),
+                  child: Text('ROADMAP', style: TextStyle(
+                      color: Theme.of(context).primaryColor.withValues(alpha: 0.3), fontSize: 10, letterSpacing: 1)),
                 ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ─── ABOUT ─────────────────────────────────
+            _buildSectionHeader(context, 'About'),
+            GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                children: [
+                  const ListTile(
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: Icon(Icons.info_outline, size: 22),
+                    title: Text('KOSMOS 3D', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('v1.0.0 • Open Source (MIT)'),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: const Icon(Icons.school, size: 22),
+                    title: const Text('KIO Kreativ Institut', style: TextStyle(fontSize: 14)),
+                    subtitle: const Text('Gaussian Splatting Rig Controller', style: TextStyle(fontSize: 12)),
+                    trailing: const Icon(Icons.open_in_new, size: 16),
+                    onTap: () {},
+                  ),
+                  const ListTile(
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: Icon(Icons.phone_iphone, size: 22),
+                    title: Text('Supported Sensors', style: TextStyle(fontSize: 14)),
+                    subtitle: Text('Accelerometer • Gyroscope • Magnetometer\nBarometer • GPS • Compass', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
               ),
             ),
           ],
@@ -251,11 +410,157 @@ class SettingsScreen extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Icon(icon, color: Colors.white, size: 28),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
-        subtitle: Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+        leading: Icon(icon, size: 28),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
+      ),
+    );
+  }
+
+  void _showNamingDialog(BuildContext context, RigGeometryService rig) {
+    final ctrl = TextEditingController(text: rig.namingTemplate);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('File Naming Template'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Template')),
+            const SizedBox(height: 12),
+            Text('Available variables:', style: TextStyle(color: Theme.of(ctx).primaryColor, fontSize: 12, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            const Text('{project} — Project name\n{camera} — Camera label\n{index} — Capture number (0001)\n{date} — Date (2026-04-30)\n{time} — Time (143025)',
+                style: TextStyle(fontSize: 11, height: 1.6)),
+            const SizedBox(height: 8),
+            Text('Preview: ${rig.generateFileName(projectName: "MyScan", cameraLabel: "CAM1", index: 1)}',
+                style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () { rig.setNamingTemplate(ctrl.text.trim()); Navigator.pop(ctx); },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Screen for configuring camera rig positions
+class RigLayoutScreen extends StatelessWidget {
+  const RigLayoutScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final rig = context.watch<RigGeometryService>();
+    final goPro = context.watch<GoProService>();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Rig Camera Layout')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.2)),
+            ),
+            child: const Text(
+              'Define each camera\'s position relative to the phone mount (center of rig).\n'
+              'X = left/right, Y = up/down, Z = forward/back (meters).\n'
+              'Rotation: yaw, pitch, roll (degrees).',
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+          // Auto-add connected cameras that aren't in rig yet
+          if (goPro.devices.where((d) => d.isConnected).any((d) => !rig.cameras.any((c) => c.cameraId == d.id)))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('Add Connected Cameras'),
+                onPressed: () {
+                  for (final cam in goPro.devices.where((d) => d.isConnected)) {
+                    rig.addCamera(cam.id, cam.name);
+                  }
+                },
+              ),
+            ),
+          ...rig.cameras.map((cam) => GlassCard(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ExpansionTile(
+              leading: const Icon(Icons.videocam),
+              title: Text(cam.label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              subtitle: Text('Offset: (${cam.offsetX}, ${cam.offsetY}, ${cam.offsetZ})m', style: const TextStyle(fontSize: 11)),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    children: [
+                      _offsetRow(context, 'Label', cam.label, (v) => rig.updateCamera(cam.cameraId, label: v)),
+                      _numRow(context, 'X (left/right)', cam.offsetX, (v) => rig.updateCamera(cam.cameraId, x: v)),
+                      _numRow(context, 'Y (up/down)', cam.offsetY, (v) => rig.updateCamera(cam.cameraId, y: v)),
+                      _numRow(context, 'Z (fwd/back)', cam.offsetZ, (v) => rig.updateCamera(cam.cameraId, z: v)),
+                      _numRow(context, 'Yaw°', cam.rotYaw, (v) => rig.updateCamera(cam.cameraId, yaw: v)),
+                      _numRow(context, 'Pitch°', cam.rotPitch, (v) => rig.updateCamera(cam.cameraId, pitch: v)),
+                      _numRow(context, 'Roll°', cam.rotRoll, (v) => rig.updateCamera(cam.cameraId, roll: v)),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        icon: const Icon(Icons.delete, color: Colors.redAccent, size: 16),
+                        label: const Text('Remove', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                        onPressed: () => rig.removeCamera(cam.cameraId),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _offsetRow(BuildContext context, String label, String value, ValueChanged<String> onChanged) {
+    final ctrl = TextEditingController(text: value);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(width: 90, child: Text(label, style: const TextStyle(fontSize: 12))),
+          Expanded(child: TextField(
+            controller: ctrl, style: const TextStyle(fontSize: 13),
+            decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
+            onSubmitted: onChanged,
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _numRow(BuildContext context, String label, double value, ValueChanged<double> onChanged) {
+    final ctrl = TextEditingController(text: value.toStringAsFixed(3));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(width: 90, child: Text(label, style: const TextStyle(fontSize: 12))),
+          Expanded(child: TextField(
+            controller: ctrl, style: const TextStyle(fontSize: 13),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+            decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
+            onSubmitted: (v) { final d = double.tryParse(v); if (d != null) onChanged(d); },
+          )),
+        ],
       ),
     );
   }
@@ -416,117 +721,5 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
   }
 }
 
-// ─── SERVER CONFIG DIALOG (LEGACY) ──────────────────────────
 
-class ServerConfigDialog extends StatefulWidget {
-  const ServerConfigDialog({super.key});
 
-  @override
-  State<ServerConfigDialog> createState() => _ServerConfigDialogState();
-}
-
-class _ServerConfigDialogState extends State<ServerConfigDialog> {
-  final _urlCtrl = TextEditingController();
-  final _userCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-  final _apiCtrl = TextEditingController();
-  bool _obscure = true;
-  bool _isSaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _urlCtrl.text = prefs.getString('server_url') ?? '';
-      _userCtrl.text = prefs.getString('server_username') ?? '';
-      _passCtrl.text = prefs.getString('server_password') ?? '';
-      _apiCtrl.text = prefs.getString('server_api_key') ?? '';
-    });
-  }
-
-  Future<void> _save() async {
-    setState(() => _isSaving = true);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('server_url', _urlCtrl.text.trim());
-    await prefs.setString('server_username', _userCtrl.text.trim());
-    await prefs.setString('server_password', _passCtrl.text);
-    await prefs.setString('server_api_key', _apiCtrl.text.trim());
-    setState(() => _isSaving = false);
-    if (mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: const Text('Server configuration saved.'), backgroundColor: Theme.of(context).primaryColor),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _urlCtrl.dispose(); _userCtrl.dispose(); _passCtrl.dispose(); _apiCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final settings = context.watch<SettingsProvider>();
-    return AlertDialog(
-      backgroundColor: const Color(0xFF1A1A1A),
-      title: Text(settings.translate('server_login'), style: const TextStyle(color: Colors.white)),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(settings.translate('server_config_desc'), style: const TextStyle(color: Colors.white54, fontSize: 13)),
-            const SizedBox(height: 16),
-            _buildField(settings.translate('server_url'), _urlCtrl, Icons.link, hint: 'https://your-server.com/api'),
-            const SizedBox(height: 12),
-            _buildField(settings.translate('username'), _userCtrl, Icons.person),
-            const SizedBox(height: 12),
-            _buildField(settings.translate('password'), _passCtrl, Icons.lock,
-              obscure: _obscure,
-              suffix: IconButton(
-                icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: Colors.white38, size: 20),
-                onPressed: () => setState(() => _obscure = !_obscure),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildField(settings.translate('api_key'), _apiCtrl, Icons.key, hint: 'Optional'),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context),
-            child: Text(settings.translate('close'), style: const TextStyle(color: Colors.white54))),
-        ElevatedButton(
-          onPressed: _isSaving ? null : _save,
-          child: _isSaving
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : Text(settings.translate('save')),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildField(String label, TextEditingController controller, IconData icon,
-      {bool obscure = false, String? hint, Widget? suffix}) {
-    return TextField(
-      controller: controller, obscureText: obscure,
-      style: const TextStyle(color: Colors.white, fontSize: 14),
-      decoration: InputDecoration(
-        labelText: label, hintText: hint,
-        labelStyle: const TextStyle(color: Colors.white54),
-        hintStyle: const TextStyle(color: Colors.white24),
-        prefixIcon: Icon(icon, color: Colors.white38, size: 20),
-        suffixIcon: suffix,
-        enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white24), borderRadius: BorderRadius.circular(8)),
-        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Theme.of(context).primaryColor), borderRadius: BorderRadius.circular(8)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      ),
-    );
-  }
-}

@@ -75,28 +75,36 @@ class QrConfigScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('📱 Camera Settings QR', style: TextStyle(color: Colors.white, fontSize: 16)),
+        backgroundColor: Theme.of(ctx).cardTheme.color,
+        title: const Text('📱 Camera Settings QR', style: TextStyle(fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-              child: QrImageView(data: qrData, version: QrVersions.auto, size: 200),
+            GestureDetector(
+              onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                builder: (_) => _FullScreenQr(data: qrData, settings: settingsToEncode),
+              )),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                child: QrImageView(data: qrData, version: QrVersions.auto, size: 260),
+              ),
             ),
-            const SizedBox(height: 12),
-            Text('Scan this QR from another device\nto apply these settings',
+            const SizedBox(height: 8),
+            Text('Tap QR to view fullscreen',
+                style: TextStyle(color: Theme.of(ctx).primaryColor, fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Scan from another phone to apply settings',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+                style: TextStyle(color: Theme.of(ctx).textTheme.bodySmall?.color?.withValues(alpha: 0.5), fontSize: 11)),
             const SizedBox(height: 8),
             ...settingsToEncode.entries.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 2),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(e.key, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                  Text(e.value, style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+                  Text(e.key, style: TextStyle(color: Theme.of(ctx).textTheme.bodySmall?.color?.withValues(alpha: 0.4), fontSize: 11)),
+                  Text(e.value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                 ],
               ),
             )),
@@ -220,6 +228,54 @@ class _ActionCard extends StatelessWidget {
             Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
                 textAlign: TextAlign.center),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Fullscreen QR view for easy scanning
+class _FullScreenQr extends StatelessWidget {
+  final String data;
+  final Map<String, String> settings;
+
+  const _FullScreenQr({required this.data, required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        title: const Text('Scan this QR', style: TextStyle(color: Colors.black87)),
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              QrImageView(data: data, version: QrVersions.auto, size: MediaQuery.of(context).size.width * 0.85),
+              const SizedBox(height: 24),
+              const Text('KOSMOS 3D Camera Settings',
+                  style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 12),
+              ...settings.entries.map((e) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(e.key, style: const TextStyle(color: Colors.black45, fontSize: 14)),
+                    Text(e.value, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
+                  ],
+                ),
+              )),
+              const SizedBox(height: 16),
+              const Text('Scan with any QR reader app\nor share screenshot to another device',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.black38, fontSize: 12)),
+            ],
+          ),
         ),
       ),
     );

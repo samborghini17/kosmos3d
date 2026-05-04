@@ -9,6 +9,8 @@ import 'services/project_service.dart';
 import 'services/trajectory_service.dart';
 import 'services/upload_service.dart';
 import 'services/cloud_storage_service.dart';
+import 'services/rig_geometry_service.dart';
+import 'services/lidar_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +23,8 @@ void main() {
         ChangeNotifierProvider(create: (_) => TrajectoryService()),
         ChangeNotifierProvider(create: (_) => UploadService()),
         ChangeNotifierProvider(create: (_) => CloudStorageService()),
+        ChangeNotifierProvider(create: (_) => RigGeometryService()),
+        ChangeNotifierProvider(create: (_) => LidarService()),
       ],
       child: const KosmosApp(),
     ),
@@ -36,10 +40,10 @@ class KosmosApp extends StatelessWidget {
       builder: (context, settings, _) {
         return MaterialApp(
           title: 'KOSMOS 3D',
-          // Follow system dark/light mode
+          // Follow user preference (system/dark/light)
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
-          themeMode: ThemeMode.system,
+          themeMode: settings.themeMode,
           home: const _StartupWrapper(),
           debugShowCheckedModeBanner: false,
         );
