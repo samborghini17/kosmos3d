@@ -6,6 +6,7 @@ import '../services/project_service.dart';
 import '../services/gopro_service.dart';
 
 import '../widgets/glass_card.dart';
+import '../widgets/camera_connection_status.dart';
 import 'settings.dart';
 import 'project_flow.dart';
 import 'capture_session.dart';
@@ -13,6 +14,7 @@ import 'gallery_screen.dart';
 import 'point_cloud_preview.dart';
 import 'qr_config_screen.dart';
 import 'device_manager.dart';
+import 'export_screen.dart';
 
 class MainMenuScreen extends StatelessWidget {
   const MainMenuScreen({super.key});
@@ -43,6 +45,7 @@ class MainMenuScreen extends StatelessWidget {
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
+          const CameraConnectionStatus(),
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: settings.translate('settings'),
@@ -80,7 +83,7 @@ class MainMenuScreen extends StatelessWidget {
                 child: Text(
                   settings.translate('project_overview'),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white, fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
@@ -92,13 +95,13 @@ class MainMenuScreen extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.view_in_ar, size: 64, color: Colors.white.withValues(alpha: 0.2)),
+                                Icon(Icons.view_in_ar, size: 64, color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.2)),
                                 const SizedBox(height: 16),
                                 Text(settings.translate('no_projects'),
-                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 16)),
+                                    style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.5), fontSize: 16)),
                                 const SizedBox(height: 8),
                                 Text(settings.translate('create_first_project'),
-                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14)),
+                                    style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.3), fontSize: 14)),
                               ],
                             ),
                           )
@@ -145,7 +148,7 @@ class MainMenuScreen extends StatelessWidget {
             children: [
               Icon(icon, size: 24, color: primary),
               const SizedBox(height: 4),
-              Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10),
+              Text(label, style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.6), fontSize: 10),
                   textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
             ],
           ),
@@ -170,24 +173,24 @@ class MainMenuScreen extends StatelessWidget {
           child: Icon(modeIcon, color: Theme.of(context).primaryColor, size: 28),
         ),
         title: Text(project.name,
-            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
+            style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color, fontSize: 16)),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Row(
             children: [
-              Icon(Icons.camera, size: 14, color: Colors.white.withValues(alpha: 0.5)),
+              Icon(Icons.camera, size: 14, color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.5)),
               const SizedBox(width: 4),
               Text('${project.captureCount} captures',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+                  style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.5), fontSize: 12)),
               const SizedBox(width: 12),
-              Icon(Icons.access_time, size: 14, color: Colors.white.withValues(alpha: 0.5)),
+              Icon(Icons.access_time, size: 14, color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.5)),
               const SizedBox(width: 4),
-              Text(timeAgo, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+              Text(timeAgo, style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.5), fontSize: 12)),
             ],
           ),
         ),
         trailing: PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert, color: Colors.white54),
+          icon: Icon(Icons.more_vert, color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.54)),
           onSelected: (value) async {
             if (value == 'open') {
               Navigator.push(context, MaterialPageRoute(builder: (_) => CaptureSessionScreen(project: project)));
@@ -195,6 +198,9 @@ class MainMenuScreen extends StatelessWidget {
               Navigator.push(context, MaterialPageRoute(builder: (_) => GalleryScreen(project: project)));
             } else if (value == '3d') {
               Navigator.push(context, MaterialPageRoute(builder: (_) => const PointCloudPreviewScreen()));
+            } else if (value == 'export') {
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => ExportScreen(project: project)));
             } else if (value == 'delete') {
               final confirmed = await showDialog<bool>(
                 context: context,
@@ -217,6 +223,7 @@ class MainMenuScreen extends StatelessWidget {
             const PopupMenuItem(value: 'open', child: Text('Open Session')),
             const PopupMenuItem(value: 'gallery', child: Text('Gallery')),
             const PopupMenuItem(value: '3d', child: Text('3D Preview')),
+            const PopupMenuItem(value: 'export', child: Text('Export (COLMAP / 3DGS)')),
             const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.redAccent))),
           ],
         ),

@@ -51,7 +51,6 @@ class CloudStorageService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Save B2 credentials securely
   Future<void> saveCredentials({
     required String keyId,
     required String applicationKey,
@@ -60,7 +59,9 @@ class CloudStorageService extends ChangeNotifier {
     String region = 'eu-central-003',
   }) async {
     await _secureStorage.write(key: _keyId, value: keyId);
-    await _secureStorage.write(key: _keySecret, value: applicationKey);
+    if (applicationKey.isNotEmpty) {
+      await _secureStorage.write(key: _keySecret, value: applicationKey);
+    }
     await _secureStorage.write(key: _keyBucket, value: bucketName);
     await _secureStorage.write(key: _keyEndpoint, value: endpoint);
     await _secureStorage.write(key: _keyRegion, value: region);

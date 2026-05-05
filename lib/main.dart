@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
 import 'screens/main_menu.dart';
+import 'screens/splash_screen.dart';
 import 'providers/settings_provider.dart';
 import 'services/gopro_service.dart';
 import 'services/project_service.dart';
@@ -11,6 +12,8 @@ import 'services/upload_service.dart';
 import 'services/cloud_storage_service.dart';
 import 'services/rig_geometry_service.dart';
 import 'services/lidar_service.dart';
+import 'services/export_service.dart';
+import 'services/audio_guide_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +28,8 @@ void main() {
         ChangeNotifierProvider(create: (_) => CloudStorageService()),
         ChangeNotifierProvider(create: (_) => RigGeometryService()),
         ChangeNotifierProvider(create: (_) => LidarService()),
+        Provider(create: (_) => ExportService()),
+        ChangeNotifierProvider(create: (_) => AudioGuideService()),
       ],
       child: const KosmosApp(),
     ),
@@ -44,7 +49,7 @@ class KosmosApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: settings.themeMode,
-          home: const _StartupWrapper(),
+          home: SplashScreen(nextScreen: const _StartupWrapper()),
           debugShowCheckedModeBanner: false,
         );
       },
@@ -101,7 +106,11 @@ class _StartupWrapperState extends State<_StartupWrapper> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _setupStep(Icons.phone_android, 'Mount your phone',
+                _setupStep(
+                    Theme.of(ctx).platform == TargetPlatform.iOS
+                        ? Icons.phone_iphone
+                        : Icons.phone_android,
+                    'Mount your phone',
                     'Attach your phone to the rig\'s phone mount for accurate sensor tracking (gyroscope, GPS, compass).',
                     textColor, mutedColor),
                 const SizedBox(height: 14),
@@ -153,3 +162,4 @@ class _StartupWrapperState extends State<_StartupWrapper> {
   @override
   Widget build(BuildContext context) => const MainMenuScreen();
 }
+

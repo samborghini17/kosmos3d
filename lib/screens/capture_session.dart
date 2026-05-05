@@ -10,6 +10,9 @@ import '../providers/settings_provider.dart';
 import '../services/gopro_service.dart';
 import '../services/project_service.dart';
 import '../services/trajectory_service.dart';
+import '../services/audio_guide_service.dart';
+import '../services/lidar_service.dart';
+import 'export_screen.dart';
 
 /// Data point for a single capture event.
 class CapturePoint {
@@ -88,18 +91,26 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
 
     _initSensors();
 
-    // Start trajectory recording
+    // Start trajectory and LiDAR recording
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TrajectoryService>().startRecording();
+      final lidar = context.read<LidarService>();
+      lidar.checkAvailability().then((_) {
+        if (lidar.isAvailable) {
+          lidar.startCapture(outputDir: '${_project.id}/lidar');
+        }
+      });
     });
   }
 
   Future<void> _initSensors() async {
-    // Magnetometer for compass heading
+    // Magnetometer for compass heading (portrait mode — phone upright)
     _magnetometerSub = magnetometerEventStream().listen((event) {
-      // Simple heading calculation from magnetometer
-      double heading = atan2(event.y, event.x) * (180 / pi);
+      // Portrait: phone Y-axis points up, X-axis points right
+      // atan2(x, y) gives heading where 0° = North (towards top of phone)
+      double heading = atan2(event.x, event.y) * (180 / pi);
       if (heading < 0) heading += 360;
+      heading = (360 - heading) % 360; // Correct for clockwise bearing
       setState(() => _currentHeading = heading);
     });
 
@@ -127,8 +138,9 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
     _pulseController.dispose();
     _flashController.dispose();
     _magnetometerSub?.cancel();
-    // Stop trajectory recording
+    // Stop trajectory and LiDAR recording
     try { context.read<TrajectoryService>().stopRecording(); } catch (_) {}
+    try { context.read<LidarService>().stopCapture(); } catch (_) {}
     super.dispose();
   }
 
@@ -181,6 +193,12 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
     // Record trajectory point
     context.read<TrajectoryService>().recordCapturePoint(_sessionCaptureCount);
 
+    // Capture LiDAR frame
+    final lidar = context.read<LidarService>();
+    if (lidar.isAvailable && lidar.isCapturing) {
+      await lidar.captureDepthFrame(_sessionCaptureCount);
+    }
+
     // Trigger shutter on all cameras
     await goPro.triggerAllShutters();
 
@@ -200,6 +218,23 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
       _isCapturing = false;
     });
 
+    // Audio guidance feedback
+    final audioGuide = context.read<AudioGuideService>();
+    if (_capturePoints.length >= 2) {
+      final last = _capturePoints.last;
+      final prev = _capturePoints[_capturePoints.length - 2];
+      final angleDiff = (last.heading - prev.heading).abs();
+      final normalizedDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
+      if (normalizedDiff > 40) {
+        audioGuide.warnLargeGap(normalizedDiff.toInt());
+      } else if (normalizedDiff < 5) {
+        audioGuide.warnTooClose();
+      }
+    }
+    if (postCaptureCoverage >= 90 && preCaptureCoverage < 90) {
+      audioGuide.announceGoodCoverage(postCaptureCoverage.toInt());
+    }
+
     // Update project
     _project.captureCount = _sessionCaptureCount;
     final projectService = context.read<ProjectService>();
@@ -207,28 +242,32 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
   }
 
   Future<void> _endSession() async {
-    final confirmed = await showDialog<bool>(
+    final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('End Session?', style: TextStyle(color: Colors.white)),
+        title: const Text('End Capture Phase?', style: TextStyle(color: Colors.white)),
         content: Text(
-          '$_sessionCaptureCount frames captured.\nProject will be saved.',
+          '$_sessionCaptureCount frames captured.\nReady to process or export data?',
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Continue')),
-          TextButton(
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Resume')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('End Session', style: TextStyle(color: Theme.of(context).primaryColor)),
+            child: const Text('End Capture & Go to Export', style: TextStyle(color: Colors.black)),
           ),
         ],
       ),
     );
 
-    if (confirmed == true && mounted) {
+    if (result == true && mounted) {
       _sessionTimer.stop();
-      Navigator.pop(context);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => ExportScreen(project: _project)),
+      );
     }
   }
 
@@ -422,15 +461,34 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                             style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
                         const Spacer(),
                         if (_timelapseActive)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Text('${_timelapseInterval}s',
-                                style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                          GestureDetector(
+                            onTap: _showTimelapseSettings,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: primaryColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Text('${_timelapseInterval}s',
+                                      style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.edit, size: 12, color: primaryColor),
+                                ],
+                              ),
+                            ),
                           ),
                         Switch(
                           value: _timelapseActive,
                           activeColor: primaryColor,
-                          onChanged: (val) => _toggleTimelapse(val),
+                          onChanged: (val) {
+                            if (val && _timelapseInterval == 5 && !_timelapseActive) { // Default starting point or give user choice
+                               _toggleTimelapse(val);
+                            } else {
+                               _toggleTimelapse(val);
+                            }
+                          },
                         ),
                       ],
                     ),
@@ -454,6 +512,34 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                         _buildBottomStat(Icons.star, '${_qualityScore.toInt()}', 'Score'),
                       ],
                     ),
+                  ),
+                  
+                  // ─── LiDAR Status ───
+                  Consumer<LidarService>(
+                    builder: (context, lidar, child) {
+                      if (!lidar.isAvailable) return const SizedBox.shrink();
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8, left: 24, right: 24),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.radar, size: 14, color: primaryColor),
+                            const SizedBox(width: 8),
+                            Text(
+                              'LiDAR Active: ${lidar.depthFrameCount} frames',
+                              style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -546,12 +632,43 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
   void _toggleTimelapse(bool active) {
     setState(() => _timelapseActive = active);
     if (active) {
+      _timelapseTimer?.cancel();
       _timelapseTimer = Timer.periodic(Duration(seconds: _timelapseInterval), (_) {
         if (!_isCapturing) _triggerCapture();
       });
     } else {
       _timelapseTimer?.cancel();
     }
+  }
+
+  void _showTimelapseSettings() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: const Text('Auto-Trigger Interval', style: TextStyle(color: Colors.white, fontSize: 16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [3, 5, 10, 15, 30].map((sec) {
+              return ListTile(
+                title: Text('$sec Seconds', style: const TextStyle(color: Colors.white70)),
+                trailing: _timelapseInterval == sec
+                    ? Icon(Icons.check, color: Theme.of(context).primaryColor)
+                    : null,
+                onTap: () {
+                  setState(() => _timelapseInterval = sec);
+                  if (_timelapseActive) {
+                    _toggleTimelapse(true); // Restart timer with new interval
+                  }
+                  Navigator.pop(ctx);
+                },
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
   }
 
   // ─── QUALITY SCORING ────────────────────────────────────────

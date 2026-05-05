@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/camera_device.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/camera_connection_status.dart';
 import '../services/gopro_service.dart';
 import '../providers/settings_provider.dart';
 
@@ -20,35 +21,145 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final goPro = context.read<GoProService>();
       if (!goPro.isScanning && goPro.devices.isEmpty) {
-        _checkLocationAndScan(goPro);
+        _checkAndScan(goPro);
       }
     });
   }
 
-  Future<void> _checkLocationAndScan(GoProService goPro) async {
-    if (await Permission.location.serviceStatus.isDisabled) {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF1E1E1E),
-            title: const Text('Location Services Required', style: TextStyle(color: Colors.white)),
-            content: const Text(
-              'Android requires Location / GPS to be ON for Bluetooth scanning.\n\nPull down your quick settings and turn on Location.',
-              style: TextStyle(color: Colors.white70),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text('OK', style: TextStyle(color: Theme.of(context).primaryColor)),
+  Future<void> _checkAndScan(GoProService goPro) async {
+    // On Android, Location/GPS must be on for BLE scanning
+    if (Theme.of(context).platform == TargetPlatform.android) {
+      if (await Permission.location.serviceStatus.isDisabled) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              title: const Text('Location Services Required', style: TextStyle(color: Colors.white)),
+              content: const Text(
+                'Android requires Location / GPS to be ON for Bluetooth scanning.\n\nPull down your quick settings and turn on Location.',
+                style: TextStyle(color: Colors.white70),
               ),
-            ],
-          ),
-        );
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('OK', style: TextStyle(color: Theme.of(context).primaryColor)),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
     goPro.startScan();
+  }
+
+  Future<void> _confirmFormatAll(GoProService goPro) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Format ALL SD Cards?', style: TextStyle(color: Colors.redAccent)),
+        content: const Text(
+          'This will permanently delete all media on every connected GoPro camera. This action cannot be undone.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Format All'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Formatting all SD cards...')));
+      }
+      await goPro.formatAllSdCards();
+    }
+  }
+
+  Future<void> _confirmPowerOffAll(GoProService goPro) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Power Off All Cameras?', style: TextStyle(color: Colors.orangeAccent)),
+        content: const Text(
+          'This will turn off all connected GoPros to save battery.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Power Off All'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Powering off cameras...')));
+      }
+      await goPro.powerOffAll();
+    }
+  }
+
+  Future<void> _showTetherDialog(GoProService goPro) async {
+    final ssidCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Tether to Mobile Hotspot', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter your phone\'s Mobile Hotspot credentials. The GoPros will connect to your phone for high-speed transfer.', style: TextStyle(color: Colors.white70, fontSize: 13)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ssidCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Hotspot Name (SSID)', labelStyle: TextStyle(color: Colors.white54)),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: passCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Password', labelStyle: TextStyle(color: Colors.white54)),
+              obscureText: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Tether All', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final ssid = ssidCtrl.text.trim();
+      final pass = passCtrl.text.trim();
+      if (ssid.isEmpty || pass.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('SSID and Password required')));
+        return;
+      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tethering to $ssid...')));
+      await goPro.tetherAllToHotspot(ssid, pass);
+    }
   }
 
   @override
@@ -61,11 +172,12 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
       appBar: AppBar(
         title: Text(settings.translate('device_manager')),
         actions: [
+          const CameraConnectionStatus(),
           IconButton(
             icon: goPro.isScanning
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.refresh),
-            onPressed: goPro.isScanning ? null : () => _checkLocationAndScan(goPro),
+            onPressed: goPro.isScanning ? null : () => _checkAndScan(goPro),
             tooltip: settings.translate('scanning'),
           ),
         ],
@@ -96,6 +208,59 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 ],
               ),
             ),
+            // ─── Fleet Management Actions ───
+            if (cameras.any((c) => c.isConnected))
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
+                          foregroundColor: Colors.redAccent,
+                          elevation: 0,
+                          side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.3)),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        onPressed: () => _confirmFormatAll(goPro),
+                        icon: const Icon(Icons.sd_storage, size: 16),
+                        label: const Text('Format', style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orangeAccent.withValues(alpha: 0.1),
+                          foregroundColor: Colors.orangeAccent,
+                          elevation: 0,
+                          side: BorderSide(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        onPressed: () => _confirmPowerOffAll(goPro),
+                        icon: const Icon(Icons.power_settings_new, size: 16),
+                        label: const Text('Power Off', style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                          foregroundColor: Theme.of(context).primaryColor,
+                          elevation: 0,
+                          side: BorderSide(color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        onPressed: () => _showTetherDialog(goPro),
+                        icon: const Icon(Icons.wifi_tethering, size: 16),
+                        label: const Text('Tether', style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // ─── Camera List ───
             Expanded(
               child: cameras.isEmpty
@@ -115,7 +280,7 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                           if (!goPro.isScanning) ...[
                             const SizedBox(height: 12),
                             ElevatedButton.icon(
-                              onPressed: () => _checkLocationAndScan(goPro),
+                              onPressed: () => _checkAndScan(goPro),
                               icon: const Icon(Icons.search),
                               label: const Text('Scan for Devices'),
                             ),
@@ -217,10 +382,23 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          cam.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white),
-                          overflow: TextOverflow.ellipsis,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                cam.displayName,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (cam.isConnected)
+                              IconButton(
+                                icon: const Icon(Icons.edit, size: 16, color: Colors.white54),
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                onPressed: () => _showRenameDialog(context, cam, goPro),
+                              ),
+                          ],
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -263,6 +441,34 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 }).toList(),
               ),
               const SizedBox(height: 12),
+              // AP Password Future Builder
+              FutureBuilder<String?>(
+                future: goPro.getApPassword(cam.id),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const SizedBox(height: 24, child: Text('Loading WiFi info...', style: TextStyle(color: Colors.white38, fontSize: 11)));
+                  }
+                  final pwd = snapshot.data ?? 'Unknown';
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.orangeAccent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.wifi_password, size: 14, color: Colors.orangeAccent),
+                        const SizedBox(width: 8),
+                        Text('WiFi Password: ', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
+                        Text(pwd, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                      ],
+                    ),
+                  );
+                },
+              ),
               // Action buttons
               Row(
                 children: [
@@ -481,6 +687,42 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showRenameDialog(BuildContext context, CameraDevice cam, GoProService goPro) async {
+    final controller = TextEditingController(text: cam.customName ?? cam.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Rename Camera', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Enter new name',
+            hintStyle: TextStyle(color: Colors.white54),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.green)),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text('Save', style: TextStyle(color: Theme.of(context).primaryColor)),
+          ),
+        ],
+      ),
+    );
+
+    if (newName != null && newName.isNotEmpty && mounted) {
+      await goPro.renameCamera(cam.id, newName);
+    }
   }
 }
 

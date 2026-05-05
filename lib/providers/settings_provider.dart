@@ -29,6 +29,10 @@ class SettingsProvider extends ChangeNotifier {
   bool _recordBarometer = true;
   int _sensorRate = 50; // ms
   int _gpsRate = 2; // seconds
+  bool _stayAwake = true; // prevent phone sleep during scans
+  bool _debugLogging = false; // verbose BLE/sensor logs
+  bool _autoReconnect = true; // auto-reconnect lost cameras
+  int _scanTimeout = 5; // BLE scan duration in seconds
 
   String get currentLanguage => _currentLanguage;
   ThemeMode get themeMode => _themeMode;
@@ -37,6 +41,10 @@ class SettingsProvider extends ChangeNotifier {
   bool get recordBarometer => _recordBarometer;
   int get sensorRate => _sensorRate;
   int get gpsRate => _gpsRate;
+  bool get stayAwake => _stayAwake;
+  bool get debugLogging => _debugLogging;
+  bool get autoReconnect => _autoReconnect;
+  int get scanTimeout => _scanTimeout;
 
   // ─── BUILT-IN PRESETS ────────────────────────────────────
   static const List<CameraPreset> builtInPresets = [
@@ -97,6 +105,10 @@ class SettingsProvider extends ChangeNotifier {
     _recordBarometer = prefs.getBool('record_barometer') ?? true;
     _sensorRate = prefs.getInt('sensor_rate') ?? 50;
     _gpsRate = prefs.getInt('gps_rate') ?? 2;
+    _stayAwake = prefs.getBool('stay_awake') ?? true;
+    _debugLogging = prefs.getBool('debug_logging') ?? false;
+    _autoReconnect = prefs.getBool('auto_reconnect') ?? true;
+    _scanTimeout = prefs.getInt('scan_timeout') ?? 5;
 
     // Load custom presets
     final presetsJson = prefs.getString('custom_presets');
@@ -166,6 +178,53 @@ class SettingsProvider extends ChangeNotifier {
     _gpsRate = seconds;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('gps_rate', seconds);
+    notifyListeners();
+  }
+
+  void setStayAwake(bool value) async {
+    _stayAwake = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('stay_awake', value);
+    notifyListeners();
+  }
+
+  void setDebugLogging(bool value) async {
+    _debugLogging = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('debug_logging', value);
+    notifyListeners();
+  }
+
+  void setAutoReconnect(bool value) async {
+    _autoReconnect = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_reconnect', value);
+    notifyListeners();
+  }
+
+  void setScanTimeout(int seconds) async {
+    _scanTimeout = seconds;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('scan_timeout', seconds);
+    notifyListeners();
+  }
+
+  /// Reset all settings to defaults
+  Future<void> resetAllSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _hapticFeedback = true;
+    _autoUpload = false;
+    _recordBarometer = true;
+    _sensorRate = 50;
+    _gpsRate = 2;
+    _stayAwake = true;
+    _debugLogging = false;
+    _autoReconnect = true;
+    _scanTimeout = 5;
+    _themeMode = ThemeMode.system;
+    _currentLanguage = 'en';
+    _customPresets = [];
+    await prefs.clear();
     notifyListeners();
   }
 

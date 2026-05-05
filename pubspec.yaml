@@ -46,6 +46,7 @@ dependencies:
   flutter_secure_storage: ^9.2.4
   qr_flutter: ^4.1.0
   crypto: ^3.0.6
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:
@@ -80,6 +81,7 @@ flutter:
 
   assets:
     - assets/icon/
+    - assets/logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

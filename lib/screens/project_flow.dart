@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/gopro_service.dart';
 import '../services/project_service.dart';
+import '../widgets/camera_connection_status.dart';
 
 import 'capture_session.dart';
 
@@ -43,6 +44,9 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(settings.translate('new_project')),
+        actions: const [
+          CameraConnectionStatus(),
+        ],
       ),
       body: Stepper(
         currentStep: _currentStep,
@@ -339,10 +343,43 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
       'Bitrate': _bitrate,
     };
 
-    // Show a loading indicator
+    // Show a loading indicator dialog with the logo
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Applying settings to cameras...'), duration: Duration(seconds: 2)),
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Load the custom logo
+                Image.asset(
+                  'assets/logo.png',
+                  height: 100,
+                  errorBuilder: (context, error, stackTrace) {
+                    // Fallback if the image isn't placed yet
+                    return const Icon(Icons.camera, size: 80, color: Colors.white);
+                  },
+                ),
+                const SizedBox(height: 24),
+                const CircularProgressIndicator(color: Colors.greenAccent),
+                const SizedBox(height: 16),
+                const Text(
+                  'Applying settings to cameras...',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Please wait',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+              ],
+            ),
+          );
+        },
       );
     }
 
@@ -363,6 +400,11 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
       smartCapture: _smartCapture,
       cameraSettings: cameraSettings,
     );
+
+    // Dismiss the loading dialog
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
 
     if (mounted) {
       Navigator.pushReplacement(

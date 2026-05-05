@@ -92,6 +92,24 @@ class AppTranslations {
       'preset_applied': 'Preset applied',
       'camera_rig': 'Camera Rig',
       'select_preset': 'Select Preset',
+      // Bluetooth & connectivity
+      'bluetooth_connectivity': 'Bluetooth & Connectivity',
+      'auto_reconnect': 'Auto-Reconnect',
+      'auto_reconnect_desc': 'Reconnect to lost cameras automatically',
+      'scan_duration': 'Scan Duration',
+      'platform_info_ios': 'iOS — Bluetooth permission managed by system',
+      'platform_info_android': 'Android — Location required for BLE scan',
+      // Advanced
+      'advanced': 'Advanced',
+      'stay_awake': 'Stay Awake',
+      'stay_awake_desc': 'Prevent phone sleep during scans',
+      'debug_logging': 'Debug Logging',
+      'debug_logging_desc': 'Verbose BLE & sensor output in console',
+      'reset_settings': 'Reset All Settings',
+      'reset_settings_desc': 'Restore factory defaults',
+      'reset_confirm': 'This will reset all settings to defaults, remove custom presets, and clear saved credentials.',
+      'bluetooth_off_ios': 'Make sure Bluetooth is turned on in Settings → Bluetooth.',
+      'location_off_android': 'Android requires Location / GPS to be ON for Bluetooth scanning.',
     },
     'de': {
       'app_title': 'KOSMOS 3D',
@@ -184,6 +202,24 @@ class AppTranslations {
       'preset_applied': 'Vorlage angewendet',
       'camera_rig': 'Kamera-Rig',
       'select_preset': 'Vorlage auswählen',
+      // Bluetooth & Konnektivität
+      'bluetooth_connectivity': 'Bluetooth & Konnektivität',
+      'auto_reconnect': 'Automatisch verbinden',
+      'auto_reconnect_desc': 'Verlorene Kameras automatisch wiederherstellen',
+      'scan_duration': 'Scan-Dauer',
+      'platform_info_ios': 'iOS — Bluetooth-Berechtigung vom System verwaltet',
+      'platform_info_android': 'Android — Standort für BLE-Scan erforderlich',
+      // Erweitert
+      'advanced': 'Erweitert',
+      'stay_awake': 'Wach bleiben',
+      'stay_awake_desc': 'Telefon-Ruhemodus während Scans verhindern',
+      'debug_logging': 'Debug-Protokollierung',
+      'debug_logging_desc': 'Ausführliche BLE- & Sensor-Ausgabe in der Konsole',
+      'reset_settings': 'Alle Einstellungen zurücksetzen',
+      'reset_settings_desc': 'Werkseinstellungen wiederherstellen',
+      'reset_confirm': 'Alle Einstellungen werden auf Standardwerte zurückgesetzt, benutzerdefinierte Vorlagen entfernt und gespeicherte Zugangsdaten gelöscht.',
+      'bluetooth_off_ios': 'Stelle sicher, dass Bluetooth in Einstellungen → Bluetooth eingeschaltet ist.',
+      'location_off_android': 'Android erfordert Standort / GPS für Bluetooth-Scanning.',
     }
   };
 

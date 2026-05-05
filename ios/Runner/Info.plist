@@ -2,12 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>This app needs Bluetooth to connect to and control GoPro cameras.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>This app needs Bluetooth to connect to and control GoPro cameras.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>This app needs location permission to scan for Bluetooth devices on some systems.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -32,6 +26,22 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>This app needs Bluetooth to discover, connect to, and control GoPro cameras on your rig.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>This app needs Bluetooth to discover, connect to, and control GoPro cameras on your rig.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera and LiDAR sensor to capture 3D scan data and preview the camera rig alignment.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app may use the microphone while recording video from the camera rig.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app uses location data to geo-tag your 3D scans for better spatial reconstruction.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app uses location data to geo-tag your 3D scans for better spatial reconstruction.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>This app uses the accelerometer and gyroscope to track orientation and movement during the scan.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app needs to discover and connect to GoPro cameras on your local network.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

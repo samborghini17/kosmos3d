@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../widgets/glass_card.dart';
@@ -242,6 +243,125 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
+            // ─── BLUETOOTH & CONNECTIVITY ────────────────
+            _buildSectionHeader(context, 'Bluetooth & Connectivity'),
+            GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    secondary: const Icon(Icons.bluetooth_connected, size: 22),
+                    title: const Text('Auto-Reconnect', style: TextStyle(fontSize: 14)),
+                    subtitle: const Text('Reconnect to lost cameras automatically', style: TextStyle(fontSize: 12)),
+                    value: settings.autoReconnect,
+                    activeColor: Theme.of(context).primaryColor,
+                    onChanged: (v) => settings.setAutoReconnect(v),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: const Icon(Icons.timer, size: 22),
+                    title: const Text('Scan Duration', style: TextStyle(fontSize: 14)),
+                    subtitle: Text('${settings.scanTimeout}s per scan', style: const TextStyle(fontSize: 12)),
+                    trailing: DropdownButton<int>(
+                      value: settings.scanTimeout,
+                      underline: const SizedBox(),
+                      items: const [
+                        DropdownMenuItem(value: 3, child: Text('3s (fast)')),
+                        DropdownMenuItem(value: 5, child: Text('5s (normal)')),
+                        DropdownMenuItem(value: 10, child: Text('10s (thorough)')),
+                        DropdownMenuItem(value: 15, child: Text('15s (deep)')),
+                      ],
+                      onChanged: (v) { if (v != null) settings.setScanTimeout(v); },
+                    ),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: Icon(
+                      Platform.isIOS ? Icons.phone_iphone : Icons.phone_android,
+                      size: 22,
+                    ),
+                    title: const Text('Platform', style: TextStyle(fontSize: 14)),
+                    subtitle: Text(
+                      Platform.isIOS
+                          ? 'iOS — Bluetooth permission managed by system'
+                          : 'Android — Location required for BLE scan',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    trailing: Icon(
+                      Icons.check_circle,
+                      color: Theme.of(context).primaryColor,
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ─── ADVANCED / DEVELOPER ────────────────────
+            _buildSectionHeader(context, 'Advanced'),
+            GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    secondary: const Icon(Icons.screen_lock_portrait, size: 22),
+                    title: const Text('Stay Awake', style: TextStyle(fontSize: 14)),
+                    subtitle: const Text('Prevent phone sleep during scans', style: TextStyle(fontSize: 12)),
+                    value: settings.stayAwake,
+                    activeColor: Theme.of(context).primaryColor,
+                    onChanged: (v) => settings.setStayAwake(v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    secondary: const Icon(Icons.bug_report, size: 22),
+                    title: const Text('Debug Logging', style: TextStyle(fontSize: 14)),
+                    subtitle: const Text('Verbose BLE & sensor output in console', style: TextStyle(fontSize: 12)),
+                    value: settings.debugLogging,
+                    activeColor: Theme.of(context).primaryColor,
+                    onChanged: (v) => settings.setDebugLogging(v),
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: const Icon(Icons.restore, size: 22, color: Colors.orange),
+                    title: const Text('Reset All Settings', style: TextStyle(fontSize: 14, color: Colors.orange)),
+                    subtitle: const Text('Restore factory defaults', style: TextStyle(fontSize: 12)),
+                    onTap: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: const Color(0xFF1E1E1E),
+                          title: const Text('⚠️ Reset Settings?', style: TextStyle(color: Colors.white)),
+                          content: const Text(
+                            'This will reset all settings to defaults, remove custom presets, and clear saved credentials.',
+                            style: TextStyle(color: Colors.orange),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Reset', style: TextStyle(color: Colors.redAccent)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        await settings.resetAllSettings();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('All settings reset to defaults'), backgroundColor: Colors.orange),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // ─── ABOUT ─────────────────────────────────
             _buildSectionHeader(context, 'About'),
             GlassCard(
@@ -262,11 +382,14 @@ class SettingsScreen extends StatelessWidget {
                     trailing: const Icon(Icons.open_in_new, size: 16),
                     onTap: () {},
                   ),
-                  const ListTile(
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    leading: Icon(Icons.phone_iphone, size: 22),
-                    title: Text('Supported Sensors', style: TextStyle(fontSize: 14)),
-                    subtitle: Text('Accelerometer • Gyroscope • Magnetometer\nBarometer • GPS • Compass', style: TextStyle(fontSize: 12)),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: Icon(
+                      Platform.isIOS ? Icons.phone_iphone : Icons.phone_android,
+                      size: 22,
+                    ),
+                    title: const Text('Supported Sensors', style: TextStyle(fontSize: 14)),
+                    subtitle: const Text('Accelerometer • Gyroscope • Magnetometer\nBarometer • GPS • Compass • LiDAR (if available)', style: TextStyle(fontSize: 12)),
                   ),
                 ],
               ),

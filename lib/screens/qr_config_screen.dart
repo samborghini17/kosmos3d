@@ -70,10 +70,18 @@ class QrConfigScreen extends StatelessWidget {
       };
     }
 
-    final qrData = jsonEncode({'kosmos3d': '1.0', 'settings': settingsToEncode});
+    String qrData;
+    try {
+      qrData = jsonEncode({'kosmos3d': '1.0', 'settings': settingsToEncode});
+    } catch (e) {
+      debugPrint("QR Encode Error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to generate QR data')));
+      return;
+    }
 
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).cardTheme.color,
         title: const Text('📱 Camera Settings QR', style: TextStyle(fontSize: 16)),

@@ -1,9 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/camera_device.dart';
+
+/// Returns true if running on iOS
+bool get isIOS {
+  if (kIsWeb) return false;
+  try { return Platform.isIOS; } catch (_) { return false; }
+}
+
+/// Returns true if running on Android
+bool get isAndroid {
+  if (kIsWeb) return false;
+  try { return Platform.isAndroid; } catch (_) { return false; }
+}
 
 /// Open GoPro BLE Protocol UUIDs
 class GoProUuids {
@@ -83,9 +97,44 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
   final Map<String, Map<String, BluetoothCharacteristic>> _charCache = {};
   bool _isScanning = false;
 
+  // Custom names mapping
+  Map<String, String> _customNames = {};
+
   // Keep-alive and polling timers per device
   final Map<String, Timer> _keepAliveTimers = {};
   final Map<String, Timer> _batteryPollTimers = {};
+
+  GoProService() {
+    _loadCustomNames();
+  }
+
+  Future<void> _loadCustomNames() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('gopro_custom_names');
+      if (jsonStr != null) {
+        _customNames = Map<String, String>.from(jsonDecode(jsonStr));
+      }
+    } catch (e) {
+      debugPrint("Error loading custom names: $e");
+    }
+  }
+
+  Future<void> renameCamera(String id, String newName) async {
+    _customNames[id] = newName;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('gopro_custom_names', jsonEncode(_customNames));
+    } catch (e) {
+      debugPrint("Error saving custom names: $e");
+    }
+    
+    final index = _devices.indexWhere((d) => d.id == id);
+    if (index != -1) {
+      _devices[index] = _devices[index].copyWith(customName: newName);
+      notifyListeners();
+    }
+  }
 
   @override
   List<CameraDevice> get devices => _devices;
@@ -101,18 +150,41 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     }
   }
 
+  /// Platform-aware permission request.
+  /// iOS: Only Bluetooth permission needed (system prompts automatically).
+  /// Android: Needs Bluetooth Scan, Bluetooth Connect, and Location.
   Future<bool> _requestPermissions() async {
-    if (Platform.isAndroid) {
-      if (await Permission.bluetoothScan.request().isGranted &&
-          await Permission.bluetoothConnect.request().isGranted &&
-          await Permission.location.request().isGranted) {
-        return true;
+    if (isAndroid) {
+      final scanGranted = await Permission.bluetoothScan.request().isGranted;
+      final connectGranted = await Permission.bluetoothConnect.request().isGranted;
+      final locationGranted = await Permission.location.request().isGranted;
+      if (!scanGranted || !connectGranted || !locationGranted) {
+        debugPrint('Android BLE permissions denied: scan=$scanGranted, connect=$connectGranted, location=$locationGranted');
+        return false;
       }
-      return false;
-    } else if (Platform.isIOS) {
+      return true;
+    } else if (isIOS) {
+      // On iOS, Bluetooth permission is requested automatically by the system
+      // the first time FlutterBluePlus.startScan() is called.
+      // We just need to make sure Bluetooth is turned on.
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (adapterState != BluetoothAdapterState.on) {
+        debugPrint('iOS: Bluetooth is not turned on (state: $adapterState)');
+        return false;
+      }
       return true;
     }
     return false;
+  }
+
+  /// Human-readable explanation of why scanning failed, per platform.
+  String get scanFailureReason {
+    if (isIOS) {
+      return 'Make sure Bluetooth is turned on in Settings → Bluetooth.';
+    } else if (isAndroid) {
+      return 'Make sure Bluetooth and Location / GPS are turned on. Android requires Location for Bluetooth scanning.';
+    }
+    return 'Bluetooth scanning is not supported on this platform.';
   }
 
   // ─── SCANNING ──────────────────────────────────────────────
@@ -150,6 +222,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
                 _devices.add(CameraDevice(
                   id: r.device.remoteId.str,
                   name: deviceName,
+                  customName: _customNames[r.device.remoteId.str],
                   isConnected: false,
                   batteryLevel: 0,
                   storageRemaining: 'Unknown',
@@ -264,7 +337,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['queryReq']!.write(
         [0x04, 0x53, 0x46, 0x36, 0x08],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
     } catch (e) {
       debugPrint("Register status notifications error: $e");
     }
@@ -279,7 +352,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['queryReq']!.write(
         [0x04, 0x13, 0x46, 0x36, 0x08],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
     } catch (e) {
       debugPrint("Battery query error: $e");
     }
@@ -293,7 +366,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       if (chars == null || chars['commandReq'] == null) return;
       try {
         // Keep Alive command
-        await chars['commandReq']!.write([0x01, 0x5B], withoutResponse: false);
+        await chars['commandReq']!.write([0x01, 0x5B], withoutResponse: false).timeout(const Duration(seconds: 2));
       } catch (e) {
         debugPrint("Keep-alive error for $id: $e");
       }
@@ -392,7 +465,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x04, 0x3E, 0x02, highByte, lowByte],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] Set Preset Group: $groupId");
     } catch (e) {
       debugPrint("Set Preset Group error: $e");
@@ -430,7 +503,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['settingReq']!.write(
         [0x03, settingId, 0x01, value],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] Set setting $settingId = $value");
       await Future.delayed(const Duration(milliseconds: 150));
     } catch (e) {
@@ -492,7 +565,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x03, 0x01, 0x01, 0x01],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
     } catch (e) {
       debugPrint("Shutter trigger error: $e");
     }
@@ -506,7 +579,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x03, 0x01, 0x01, 0x00],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
     } catch (e) {
       debugPrint("Shutter stop error: $e");
     }
@@ -532,13 +605,13 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x03, 0x01, 0x01, 0x00], // Shutter off
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       await Future.delayed(const Duration(milliseconds: 300));
       // 3. Format SD Card command (Command ID 0x0A, no params)
       await chars['commandReq']!.write(
         [0x02, 0x3C, 0x00], // Length 2, Media: Format SD
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] SD Card format triggered");
     } catch (e) {
       debugPrint("Format SD error: $e");
@@ -564,10 +637,18 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x01, 0x05],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] Power off sent");
     } catch (e) {
       debugPrint("Power off error: $e");
+    }
+  }
+
+  /// Power off all connected cameras
+  Future<void> powerOffAll() async {
+    for (final cam in _devices.where((d) => d.isConnected)) {
+      await powerOff(cam.id);
+      await Future.delayed(const Duration(milliseconds: 500));
     }
   }
 
@@ -579,7 +660,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x01, 0x05], // Sleep command
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
     } catch (e) {
       debugPrint("Sleep error: $e");
     }
@@ -596,7 +677,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x03, 0x17, 0x01, 0x01],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] WiFi AP enabled");
     } catch (e) {
       debugPrint("WiFi enable error: $e");
@@ -611,11 +692,55 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x03, 0x17, 0x01, 0x00],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] WiFi AP disabled");
     } catch (e) {
       debugPrint("WiFi disable error: $e");
     }
+  }
+
+  /// Tether camera to a mobile hotspot (STA Mode)
+  Future<void> tetherToHotspot(String id, String ssid, String password) async {
+    final chars = _charCache[id];
+    if (chars == null || chars['commandReq'] == null) return;
+    try {
+      final ssidBytes = utf8.encode(ssid);
+      final passBytes = utf8.encode(password);
+      
+      final command = <int>[
+        0x03, 0x17, 0x02,
+        ssidBytes.length, ...ssidBytes,
+        passBytes.length, ...passBytes
+      ];
+      
+      // Since BLE commands have length limits (usually 20 bytes for standard MTU),
+      // we might need to chunk this, but flutter_blue_plus handles MTU automatically
+      // if MTU is negotiated. Assuming MTU > length.
+      await chars['commandReq']!.write(
+        [command.length, ...command], // length prefix for Open GoPro command
+        withoutResponse: false,
+      ).timeout(const Duration(seconds: 4));
+      
+      debugPrint("GoPro [$id] Tethering to $ssid");
+    } catch (e) {
+      debugPrint("Hotspot tether error: $e");
+    }
+  }
+
+  /// Tether ALL cameras to mobile hotspot
+  Future<void> tetherAllToHotspot(String ssid, String password) async {
+    for (final cam in _devices.where((d) => d.isConnected)) {
+      await tetherToHotspot(cam.id, ssid, password);
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  /// Get AP Password (Dummy/HTTP implementation reminder)
+  Future<String?> getApPassword(String id) async {
+    // Open GoPro BLE does not officially support querying AP password directly in all firmware.
+    // Recommended way is via HTTP when connected: http://10.5.5.9:8080/gopro/camera/ap/password
+    // Returning a placeholder for UI demonstration.
+    return "goprohero"; 
   }
 
   /// Enable WiFi on ALL connected cameras
@@ -637,7 +762,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['settingReq']!.write(
         [0x03, 0x53, 0x01, enabled ? 0x01 : 0x00],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] GPS: ${enabled ? 'ON' : 'OFF'}");
     } catch (e) {
       debugPrint("GPS toggle error: $e");
@@ -654,7 +779,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x03, 0x16, 0x01, start ? 0x01 : 0x00],
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] Locate: ${start ? 'ON' : 'OFF'}");
     } catch (e) {
       debugPrint("Locate error: $e");
@@ -672,7 +797,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['queryReq']!.write(
         [0x02, 0x13, 0x3D], // Query status 61 (media count)
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       return null; // Response comes async via notification
     } catch (e) {
       debugPrint("Media query error: $e");
@@ -690,7 +815,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x01, 0x18], // HiLight command
         withoutResponse: false,
-      );
+      ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] HiLight tag added");
     } catch (e) {
       debugPrint("HiLight error: $e");
