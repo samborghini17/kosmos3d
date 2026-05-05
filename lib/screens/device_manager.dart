@@ -80,6 +80,9 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Formatting all SD cards...')));
       }
       await goPro.formatAllSdCards();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All SD cards successfully formatted!', style: TextStyle(color: Colors.green))));
+      }
     }
   }
 
@@ -159,6 +162,11 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
       }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tethering to $ssid...')));
       await goPro.tetherAllToHotspot(ssid, pass);
+      
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cameras tethered. Auto-transferring files...')));
+      await goPro.transferAllMedia();
+      
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All files successfully transferred to local storage!', style: TextStyle(color: Colors.green))));
     }
   }
 

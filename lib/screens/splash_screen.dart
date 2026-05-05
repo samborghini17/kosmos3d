@@ -83,61 +83,9 @@ class _SplashScreenState extends State<SplashScreen>
                     // KIO Logo
                     Image.asset(
                       'assets/logo.png',
-                      width: 220,
-                      height: 220,
+                      width: 280,
+                      height: 280,
                       fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        // Fallback if logo not found
-                        return Container(
-                          width: 200,
-                          height: 200,
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'KiO',
-                              style: TextStyle(
-                                color: Color(0xFF00FF41),
-                                fontSize: 60,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 32),
-                    // App name
-                    const Text(
-                      'KOSMOS 3D',
-                      style: TextStyle(
-                        color: Color(0xFF1A1A1A),
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 4.0,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '3D Scanning Suite',
-                      style: TextStyle(
-                        color: Color(0xFF666666),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 48),
-                    // Minimal loading indicator
-                    SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: const Color(0xFF00FF41).withValues(alpha: 0.6),
-                      ),
                     ),
                   ],
                 ),

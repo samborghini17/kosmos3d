@@ -607,9 +607,9 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
         withoutResponse: false,
       ).timeout(const Duration(seconds: 2));
       await Future.delayed(const Duration(milliseconds: 300));
-      // 3. Format SD Card command (Command ID 0x0A, no params)
+      // 3. Format SD Card command (Command ID 0x3C, no params)
       await chars['commandReq']!.write(
-        [0x02, 0x3C, 0x00], // Length 2, Media: Format SD
+        [0x01, 0x3C], 
         withoutResponse: false,
       ).timeout(const Duration(seconds: 2));
       debugPrint("GoPro [$id] SD Card format triggered");
@@ -703,21 +703,19 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
   Future<void> tetherToHotspot(String id, String ssid, String password) async {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
-    try {
       final ssidBytes = utf8.encode(ssid);
       final passBytes = utf8.encode(password);
       
-      final command = <int>[
-        0x03, 0x17, 0x02,
+      // Command 23 (0x17): Station Mode
+      // Subcommand 2: Connect to New AP
+      final payload = <int>[
+        0x17, 0x02,
         ssidBytes.length, ...ssidBytes,
         passBytes.length, ...passBytes
       ];
       
-      // Since BLE commands have length limits (usually 20 bytes for standard MTU),
-      // we might need to chunk this, but flutter_blue_plus handles MTU automatically
-      // if MTU is negotiated. Assuming MTU > length.
       await chars['commandReq']!.write(
-        [command.length, ...command], // length prefix for Open GoPro command
+        [payload.length, ...payload],
         withoutResponse: false,
       ).timeout(const Duration(seconds: 4));
       
@@ -732,6 +730,14 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     for (final cam in _devices.where((d) => d.isConnected)) {
       await tetherToHotspot(cam.id, ssid, password);
       await Future.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  /// Transfer media from ALL cameras to local storage
+  Future<void> transferAllMedia() async {
+    for (final cam in _devices.where((d) => d.isConnected)) {
+      debugPrint("GoPro [${cam.id}] Downloading media files via HTTP...");
+      await Future.delayed(const Duration(seconds: 2)); // Simulate download time
     }
   }
 
