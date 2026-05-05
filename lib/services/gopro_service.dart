@@ -703,6 +703,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
   Future<void> tetherToHotspot(String id, String ssid, String password) async {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
+    try {
       final ssidBytes = utf8.encode(ssid);
       final passBytes = utf8.encode(password);
       
