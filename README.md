@@ -1,41 +1,77 @@
-# KOSMOS 3D
+<p align="center">
+  <img src="assets/icon/app_icon.png" width="112" alt="KOSMOS 3D mark" />
+</p>
 
-**A local-first multi-GoPro capture and transfer companion for photogrammetry, Gaussian splatting, and 3D scan workflows.**
+<h1 align="center">KOSMOS 3D</h1>
 
-KOSMOS 3D coordinates compatible GoPro cameras over Bluetooth Low Energy (BLE), imports camera media over each camera's direct Wi-Fi network, records useful phone sensor data, and keeps a project together for upload or external reconstruction.
+<p align="center">
+  <strong>Capture the real world. Keep every frame.</strong><br />
+  A local-first multi-GoPro companion for photogrammetry, Gaussian splatting, and 3D scan capture.
+</p>
 
-It is a capture and data-management tool. It does **not** claim to reconstruct a COLMAP project or Gaussian splat on the phone or on the included Windows receiver.
+<p align="center">
+  <img alt="Flutter" src="https://img.shields.io/badge/Flutter-mobile-55FC27?style=flat-square&labelColor=0A0C0B" />
+  <img alt="Android and iOS" src="https://img.shields.io/badge/Android%20%2B%20iOS-native%20integrations-55FC27?style=flat-square&labelColor=0A0C0B" />
+  <img alt="Local first" src="https://img.shields.io/badge/Data-local--first-55FC27?style=flat-square&labelColor=0A0C0B" />
+  <img alt="English default" src="https://img.shields.io/badge/Language-English%20%2B%20Deutsch-55FC27?style=flat-square&labelColor=0A0C0B" />
+</p>
 
-## What works today
+<p align="center">
+  <a href="#the-capture-loop">Capture loop</a> ·
+  <a href="#whats-in-the-rig">Capabilities</a> ·
+  <a href="#get-running">Get running</a> ·
+  <a href="#windows-receiver">Windows receiver</a> ·
+  <a href="#trust-boundaries">Limits</a>
+</p>
 
-- Discover and connect compatible GoPro cameras with BLE.
-- Configure a shared capture profile, check readiness, and dispatch photo/video capture to the connected cameras.
-- Use the default **Outdoor Scan** profile: Photo, Linear, portrait orientation guidance, target ISO 100, and a 1-second host-paced interval.
-- Import all available media from each connected camera, one camera at a time, over its direct Wi-Fi network. Camera SD cards are never altered.
-- Display a camera Wi-Fi password on demand and copy it; the app does not remove camera security or store the password in source control.
-- Keep checksum receipts for imported files, detect same-size corruption, preserve files when gallery export fails, and report partial imports clearly.
-- Record GPS, accelerometer, gyroscope, magnetometer, barometer (when available), and orientation metadata alongside a scan project.
-- On LiDAR-capable iPhones, capture ARKit scene-depth samples and export a PLY preview. On devices without LiDAR, show an explicitly approximate orientation/GPS coverage aid.
-- Upload a project to the included authenticated Windows receiver, or configure Backblaze B2 with a bucket-scoped application key stored in device secure storage.
-- English is the default interface language; German is available.
+---
 
-## Important limits
+> **KOSMOS mode** · dark surfaces · electric green actions · quiet, dependable tooling.
+>
+> KOSMOS 3D is designed to make a many-camera scan feel like one deliberate capture session: connect, align, capture, import, preserve, hand off.
 
-- BLE commands are sent concurrently, but this is **not hardware genlock**. Do not treat a dispatch time as proof that all shutters exposed at the same instant. Validate timing with your own rig and use a hardware sync solution where exposure precision matters.
-- The coverage view is a measured depth preview on supported LiDAR iPhones and an approximate aid otherwise. It is not a certified reconstruction-quality or GoPro image-overlap analysis.
-- “Capture guidance” is rule-based movement/orientation feedback. It is not a trained smart-capture AI.
-- Direct camera Wi-Fi transfer is the dependable current approach. Shared-phone-hotspot/COHN provisioning has model-specific security and certificate requirements and is not presented as implemented.
-- Capability support varies by camera model and firmware. The app discovers capabilities and avoids sending undocumented ISO, shutter, or white-balance values as if they were universally valid.
-- Build and test iOS on a Mac with Xcode; Windows cannot produce a signed iOS IPA.
+## The capture loop
 
-## Quick start
+```text
+ GO PROs                         KOSMOS 3D                         YOUR PIPELINE
+ ────────                        ─────────                         ─────────────
+ BLE discovery ───────────────▶  Connect & check readiness
+ shared profile ──────────────▶  Apply compatible settings
+ shutter / interval ──────────▶  Coordinate capture
+ direct camera Wi-Fi ─────────▶  Import + checksum receipt  ────▶  Windows / B2 / reconstruction
+ phone motion + position ─────▶  Project sensor metadata
+ iPhone LiDAR (supported) ────▶  Measured depth preview + PLY
+```
 
-### Requirements
+KOSMOS is intentionally **local first**. Project media and sensor data remain on the device until you decide to export or upload them. The included receiver stores and verifies files; it does not pretend to run COLMAP or generate a Gaussian splat.
 
-- Flutter SDK 3.11 or later
-- Android device with Bluetooth LE for Android testing
-- GoPro camera with Open GoPro-compatible BLE and Wi-Fi control
-- A Mac with Xcode for iOS builds
+## What's in the rig
+
+| Surface | Designed for | What it does now |
+| --- | --- | --- |
+| **Cameras** | Multi-GoPro control | BLE discovery, connection, readiness, shared capture profiles, photo/video dispatch |
+| **Outdoor Scan** | A dependable default | Photo · Linear · portrait guidance · target ISO 100 · 1-second host-paced interval |
+| **Transfers** | Leave no camera behind | Sequential direct-Wi-Fi import from every connected camera, per-file checksums, clear partial-failure reporting |
+| **Coverage** | Better field decisions | LiDAR depth preview on supported iPhones; clearly labelled approximate orientation/GPS aid elsewhere |
+| **Sensors** | Better reconstruction context | GPS, accelerometer, gyroscope, magnetometer, barometer where available, and orientation metadata |
+| **Projects** | Clean hand-off | Project-scoped captures, receipts, sensor data, local export, Windows receiver, or Backblaze B2 |
+| **Language** | A clear baseline | English by default; German available |
+
+### Made for the field
+
+<table>
+  <tr>
+    <td width="33%"><strong>01 · CONNECT</strong><br /><sub>Discover cameras over BLE and see their readiness before you start.</sub></td>
+    <td width="33%"><strong>02 · CAPTURE</strong><br /><sub>Apply a considered profile and run a coordinated photo or video session.</sub></td>
+    <td width="33%"><strong>03 · PRESERVE</strong><br /><sub>Import original media, verify it, and keep a project receipt.</sub></td>
+  </tr>
+</table>
+
+## Get running
+
+### 1. Build the app
+
+**You need:** Flutter 3.11+, a real Android/iOS device with Bluetooth LE, and compatible GoPro cameras. Build iOS on a Mac with Xcode.
 
 ```bash
 git clone https://github.com/samborghini17/kosmos3d.git
@@ -44,58 +80,77 @@ flutter pub get
 flutter run
 ```
 
-### Camera workflow
+### 2. Start a scan
 
 1. Turn on the cameras and enable their wireless connections.
-2. Open **Cameras** in KOSMOS 3D, scan, and connect each camera.
-3. Select **Outdoor Scan** or create a preset appropriate to the scene.
-4. Apply the profile to every connected camera and resolve any reported incompatibility.
-5. Start a project. Use interval capture only after confirming every camera is ready.
-6. Open **Transfers** when capture is complete and choose **Import all cameras**. KOSMOS connects to each camera’s direct Wi-Fi in turn, verifies its identity, and imports its media.
+2. In KOSMOS 3D, open **Cameras**, scan, then connect each camera.
+3. Pick **Outdoor Scan** or a scene-specific profile.
+4. Apply the profile to all cameras and resolve any reported incompatibility.
+5. Start the project only when every camera is ready.
+6. When finished, use **Transfers → Import all cameras**.
 
-The operating system may request Bluetooth, nearby-device, location, local-network, Wi-Fi, photo-library, or camera permission depending on the feature and platform.
+The app may request Bluetooth, nearby-device, location, local-network, Wi-Fi, photo-library, or camera permission depending on the platform and feature.
 
-## Windows project receiver
+## Transfer design
 
-The receiver is a small authenticated file server. It stores uploaded project files and validates checksums; it does not run reconstruction.
+### Camera → phone
+
+KOSMOS reads the camera Wi-Fi credentials over the supported control path, shows the password only on demand, and joins **one camera at a time** for reliable direct import. It verifies the endpoint identity before fetching files.
+
+<details>
+<summary><strong>Why not make GoPro Wi-Fi open?</strong></summary>
+<br />
+Camera Wi-Fi access is deliberately protected. KOSMOS makes access quick by revealing/copying the password and joining through platform Wi-Fi APIs; it does not weaken camera security or write Wi-Fi secrets into source control.
+</details>
+
+### Phone → receiver
+
+The receiver accepts authenticated uploads, preserves project-relative paths, and validates SHA-256 checksums. It is a transfer endpoint, not a reconstruction server.
+
+## Windows receiver
+
+Run the local receiver on the computer that will hold your projects:
 
 ```powershell
 cd server
 .\start_receiver.ps1 -Storage D:\KOSMOS3D_UPLOADS -Port 8787
 ```
 
-On first start it creates a random local token in `%LOCALAPPDATA%\KOSMOS3D\receiver-token.txt`. Configure the phone with the computer’s LAN address, for example `http://192.168.x.x:8787`, and that token. Keep the token out of Git and out of screenshots.
+The first run creates a random token at `%LOCALAPPDATA%\KOSMOS3D\receiver-token.txt`. Enter your computer’s LAN address (for example, `http://192.168.x.x:8787`) and that token in the app. Keep the token private.
 
-For USB-connected Android development, use:
+For an Android phone connected by USB during development:
 
 ```powershell
 adb reverse tcp:8787 tcp:8787
 ```
 
-Then configure the app with `http://127.0.0.1:8787`. See [server/README.md](server/README.md) for the receiver API and firewall notes.
+Then use `http://127.0.0.1:8787` in the app. See [server/README.md](server/README.md) for the receiver API, storage layout, and firewall notes.
 
 ## Backblaze B2
 
-Create a dedicated bucket and use a restricted application key with only the required bucket/file permissions. Do not use a master key in a mobile app, README, issue, screenshot, or commit. If a credential was shared accidentally, revoke it in Backblaze and create a new restricted key.
+Use a dedicated bucket and a **restricted, bucket-scoped application key**. Never put a master key in the app, a README, a screenshot, an issue, or Git history. If a credential is exposed, revoke it and create a new restricted key.
 
-## iOS
+## Trust boundaries
 
-The iOS target includes the permissions and native integrations needed for direct Wi-Fi joining, Photos export, and ARKit scene-depth capture on supported Pro devices. Build instructions and acceptance checks are in [ios/BUILD.md](ios/BUILD.md).
+KOSMOS prefers an honest status over a reassuring fiction.
 
-## Architecture
+| What KOSMOS does | What it does not claim |
+| --- | --- |
+| Dispatches BLE capture commands concurrently | Hardware genlock or proof of identical exposure time |
+| Shows LiDAR points on supported iPhones | A certified image-overlap or reconstruction-quality score |
+| Offers rule-based capture guidance | A trained “smart capture AI” |
+| Imports direct camera Wi-Fi media | Universal shared-hotspot/COHN provisioning across all models |
+| Queries capabilities and applies documented controls | Universal numerical ISO, shutter, or white-balance mapping across every firmware |
 
-```text
-lib/
-  screens/       Capture, camera manager, projects, transfer hub, settings
-  services/      GoPro BLE/Wi-Fi, capture coordination, import, upload, sensors
-  models/        Cameras, projects, capture points, import reports
-  l10n/          English-default UI dictionary and German translations
-server/          Authenticated Windows receiver and tests
-ios/             Wi-Fi, gallery, and LiDAR platform integration
-android/         Wi-Fi binding, media/gallery, and preview integration
-```
+Always validate discovery, permissions, camera compatibility, transfer recovery, and timing on the physical rig before a paid or irreversible shoot.
 
-## Verification
+## Platform notes
+
+- **iPhone / iPad:** LiDAR capture is available only on supported Pro hardware. Native Wi-Fi join, Photos export, and ARKit scene-depth integration are included. See [ios/BUILD.md](ios/BUILD.md).
+- **Android:** Native Wi-Fi binding keeps camera-local traffic on the camera network while transferring media.
+- **GoPro:** Support depends on the model and firmware’s Open GoPro capabilities. KOSMOS detects what is available instead of inventing unsafe setting values.
+
+## Verify the build
 
 ```bash
 flutter analyze
@@ -103,9 +158,7 @@ flutter test
 python -m unittest discover -s server -p "test_*.py"
 ```
 
-Hardware validation is still essential: test discovery, permission prompts, every intended GoPro/firmware profile, media transfer, Wi-Fi recovery, and capture timing on the physical rig before a production shoot.
-
-## References
+## Reference material
 
 - [Open GoPro documentation](https://gopro.github.io/OpenGoPro/)
 - [Flutter](https://flutter.dev/)
