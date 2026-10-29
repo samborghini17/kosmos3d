@@ -15,6 +15,11 @@ class LidarService extends ChangeNotifier {
   bool _isCapturing = false;
   int _depthFrameCount = 0;
   String? _lastDepthPath;
+  String? lastError;
+  String tracking = 'Unavailable';
+  List<List<double>> points = [];
+  Timer? _timer;
+  bool _sampling = false;
 
   bool get isAvailable => _isAvailable;
   bool get isCapturing => _isCapturing;
@@ -29,7 +34,9 @@ class LidarService extends ChangeNotifier {
       return;
     }
     try {
-      _isAvailable = await _channel.invokeMethod<bool>('checkLidarAvailable') ?? false;
+      _isAvailable =
+          await _channel.invokeMethod<bool>('checkLidarAvailable') ?? false;
+      tracking = _isAvailable ? 'Ready' : 'No LiDAR hardware';
     } catch (e) {
       debugPrint('LiDAR check error: $e');
       _isAvailable = false;
@@ -41,11 +48,39 @@ class LidarService extends ChangeNotifier {
   Future<void> startCapture({String? outputDir}) async {
     if (!_isAvailable || _isCapturing) return;
     try {
-      await _channel.invokeMethod('startDepthCapture', {'outputDir': outputDir});
+      await _channel.invokeMethod('startDepthCapture', {
+        'outputDir': outputDir,
+      });
       _isCapturing = true;
       _depthFrameCount = 0;
+      lastError = null;
+      _timer?.cancel();
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) async {
+        if (_sampling || !_isCapturing) return;
+        _sampling = true;
+        try {
+          await captureDepthFrame(_depthFrameCount);
+          final preview = await _channel.invokeMapMethod<String, dynamic>(
+            'getPreviewPoints',
+          );
+          if (preview != null) {
+            points = (preview['points'] as List)
+                .map(
+                  (p) => (p as List).map((v) => (v as num).toDouble()).toList(),
+                )
+                .toList();
+            tracking = preview['tracking'] as String? ?? 'Unknown';
+            notifyListeners();
+          }
+        } catch (e) {
+          lastError = '$e';
+        } finally {
+          _sampling = false;
+        }
+      });
       notifyListeners();
     } catch (e) {
+      lastError = '$e';
       debugPrint('LiDAR start error: $e');
     }
   }
@@ -54,12 +89,17 @@ class LidarService extends ChangeNotifier {
   Future<String?> captureDepthFrame(int index) async {
     if (!_isAvailable || !_isCapturing) return null;
     try {
-      final path = await _channel.invokeMethod<String>('captureDepthFrame', {'index': index});
+      final path = await _channel.invokeMethod<String>('captureDepthFrame', {
+        'index': index,
+      });
+      if (path == null) return null;
+      lastError = null;
       _depthFrameCount++;
       _lastDepthPath = path;
       notifyListeners();
       return path;
     } catch (e) {
+      lastError = '$e';
       debugPrint('LiDAR capture error: $e');
       return null;
     }
@@ -67,6 +107,10 @@ class LidarService extends ChangeNotifier {
 
   /// Stop depth capture session
   Future<void> stopCapture() async {
+    _timer?.cancel();
+    while (_sampling) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
     if (!_isCapturing) return;
     try {
       await _channel.invokeMethod('stopDepthCapture');
@@ -81,7 +125,9 @@ class LidarService extends ChangeNotifier {
   Future<String?> exportPointCloud({String format = 'ply'}) async {
     if (!_isAvailable) return null;
     try {
-      return await _channel.invokeMethod<String>('exportPointCloud', {'format': format});
+      return await _channel.invokeMethod<String>('exportPointCloud', {
+        'format': format,
+      });
     } catch (e) {
       debugPrint('Point cloud export error: $e');
       return null;
@@ -99,7 +145,15 @@ class LidarService extends ChangeNotifier {
 
   @override
   void dispose() {
-    stopCapture();
+    _timer?.cancel();
+    _isCapturing = false;
+    if (_isIOSPlatform) {
+      unawaited(
+        _channel
+            .invokeMethod<void>('stopDepthCapture')
+            .catchError((Object _) {}),
+      );
+    }
     super.dispose();
   }
 }

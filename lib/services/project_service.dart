@@ -1,5 +1,5 @@
-
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/scan_project.dart';
@@ -10,12 +10,13 @@ import '../models/scan_project.dart';
 class ProjectService extends ChangeNotifier {
   List<ScanProject> _projects = [];
   bool _isLoading = true;
+  bool _creating = false;
 
   List<ScanProject> get projects => List.unmodifiable(_projects);
   bool get isLoading => _isLoading;
 
-  ProjectService() {
-    loadProjects();
+  ProjectService({bool loadOnStart = true}) {
+    if (loadOnStart) loadProjects();
   }
 
   Future<Directory> get _projectsRoot async {
@@ -59,38 +60,47 @@ class ProjectService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<ScanProject> createProject(String name, {
+  Future<ScanProject> createProject(
+    String name, {
     String captureMode = 'photo',
     bool smartCapture = false,
     Map<String, String>? cameraSettings,
   }) async {
-    final root = await _projectsRoot;
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
-    final now = DateTime.now();
+    if (_creating) throw StateError('A project is already being created');
+    if (name.trim().isEmpty) throw ArgumentError('Project name is required');
+    _creating = true;
+    try {
+      final root = await _projectsRoot;
+      final id =
+          '${DateTime.now().microsecondsSinceEpoch}_${Random.secure().nextInt(1 << 32)}';
+      final now = DateTime.now();
 
-    final project = ScanProject(
-      id: id,
-      name: name,
-      createdAt: now,
-      lastModifiedAt: now,
-      captureMode: captureMode,
-      smartCapture: smartCapture,
-      cameraSettings: cameraSettings,
-    );
+      final project = ScanProject(
+        id: id,
+        name: name,
+        createdAt: now,
+        lastModifiedAt: now,
+        captureMode: captureMode,
+        smartCapture: smartCapture,
+        cameraSettings: cameraSettings,
+      );
 
-    // Create project directory and captures subdirectory
-    final projectDir = Directory('${root.path}/$id');
-    await projectDir.create(recursive: true);
-    final capturesDir = Directory('${projectDir.path}/captures');
-    await capturesDir.create();
+      // Create project directory and captures subdirectory
+      final projectDir = Directory('${root.path}/$id');
+      await projectDir.create(recursive: true);
+      final capturesDir = Directory('${projectDir.path}/captures');
+      await capturesDir.create();
 
-    // Write metadata
-    final metaFile = File('${projectDir.path}/project.json');
-    await metaFile.writeAsString(project.toJsonString());
+      // Write metadata
+      final metaFile = File('${projectDir.path}/project.json');
+      await metaFile.writeAsString(project.toJsonString());
 
-    _projects.insert(0, project);
-    notifyListeners();
-    return project;
+      _projects.insert(0, project);
+      notifyListeners();
+      return project;
+    } finally {
+      _creating = false;
+    }
   }
 
   Future<void> updateProject(ScanProject project) async {

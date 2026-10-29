@@ -1,0 +1,3 @@
+-dontwarn com.google.ar.sceneform.**
+-dontwarn com.google.ar.**
+-dontwarn com.google.devtools.build.android.desugar.runtime.**

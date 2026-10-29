@@ -26,6 +26,7 @@ class CloudStorageService extends ChangeNotifier {
 
   // B2 Native API auth cache
   String? _authToken;
+  String? _accountId;
   String? _apiUrl;
   String? _uploadUrl;
   String? _uploadAuthToken;
@@ -45,9 +46,13 @@ class CloudStorageService extends ChangeNotifier {
     final keyId = await _secureStorage.read(key: _keyId);
     final appKey = await _secureStorage.read(key: _keySecret);
     final bucket = await _secureStorage.read(key: _keyBucket);
-    _isConfigured = keyId != null && keyId.isNotEmpty &&
-                    appKey != null && appKey.isNotEmpty &&
-                    bucket != null && bucket.isNotEmpty;
+    _isConfigured =
+        keyId != null &&
+        keyId.isNotEmpty &&
+        appKey != null &&
+        appKey.isNotEmpty &&
+        bucket != null &&
+        bucket.isNotEmpty;
     notifyListeners();
   }
 
@@ -66,6 +71,10 @@ class CloudStorageService extends ChangeNotifier {
     await _secureStorage.write(key: _keyEndpoint, value: endpoint);
     await _secureStorage.write(key: _keyRegion, value: region);
     _authToken = null; // Clear cached auth
+    _accountId = null;
+    _bucketId = null;
+    _uploadUrl = null;
+    _uploadAuthToken = null;
     _isConfigured = true;
     notifyListeners();
   }
@@ -75,7 +84,9 @@ class CloudStorageService extends ChangeNotifier {
     return {
       'keyId': await _secureStorage.read(key: _keyId) ?? '',
       'bucketName': await _secureStorage.read(key: _keyBucket) ?? '',
-      'endpoint': await _secureStorage.read(key: _keyEndpoint) ?? 's3.eu-central-003.backblazeb2.com',
+      'endpoint':
+          await _secureStorage.read(key: _keyEndpoint) ??
+          's3.eu-central-003.backblazeb2.com',
       'region': await _secureStorage.read(key: _keyRegion) ?? 'eu-central-003',
     };
   }
@@ -88,6 +99,10 @@ class CloudStorageService extends ChangeNotifier {
     await _secureStorage.delete(key: _keyEndpoint);
     await _secureStorage.delete(key: _keyRegion);
     _authToken = null;
+    _accountId = null;
+    _bucketId = null;
+    _uploadUrl = null;
+    _uploadAuthToken = null;
     _apiUrl = null;
     _isConfigured = false;
     notifyListeners();
@@ -102,14 +117,19 @@ class CloudStorageService extends ChangeNotifier {
       final appKey = await _secureStorage.read(key: _keySecret) ?? '';
       final credentials = base64Encode(utf8.encode('$keyId:$appKey'));
 
-      final response = await http.get(
-        Uri.parse('https://api.backblazeb2.com/b2api/v2/b2_authorize_account'),
-        headers: {'Authorization': 'Basic $credentials'},
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(
+              'https://api.backblazeb2.com/b2api/v2/b2_authorize_account',
+            ),
+            headers: {'Authorization': 'Basic $credentials'},
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _authToken = data['authorizationToken'];
+        _accountId = data['accountId'];
         _apiUrl = data['apiUrl'];
         return true;
       }
@@ -129,12 +149,19 @@ class CloudStorageService extends ChangeNotifier {
     }
 
     try {
-      final keyId = await _secureStorage.read(key: _keyId) ?? '';
       final bucketName = await _secureStorage.read(key: _keyBucket) ?? '';
+      if (bucketName.isEmpty || bucketName == '-') {
+        _lastError =
+            'Choose a real bucket name; an application key is not a bucket.';
+        return null;
+      }
       final response = await http.post(
         Uri.parse('$_apiUrl/b2api/v2/b2_list_buckets'),
-        headers: {'Authorization': _authToken!},
-        body: jsonEncode({'accountId': keyId, 'bucketName': bucketName}),
+        headers: {
+          'Authorization': _authToken!,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'accountId': _accountId, 'bucketName': bucketName}),
       );
 
       if (response.statusCode == 200) {
@@ -204,8 +231,8 @@ class CloudStorageService extends ChangeNotifier {
     final objectKey = prefix != null ? '$prefix/$fileName' : fileName;
 
     try {
-      final bytes = await file.readAsBytes();
-      final sha1Hash = sha1.convert(bytes).toString();
+      final sha1Hash = (await sha1.bind(file.openRead()).first).toString();
+      final fileLength = await file.length();
 
       // Determine content type
       String contentType = 'application/octet-stream';
@@ -216,17 +243,26 @@ class CloudStorageService extends ChangeNotifier {
       if (ext == 'json') contentType = 'application/json';
       if (ext == 'csv') contentType = 'text/csv';
 
-      final response = await http.post(
-        Uri.parse(_uploadUrl!),
-        headers: {
+      final client = http.Client();
+      late http.Response response;
+      try {
+        final request = _FileUploadRequest(
+          Uri.parse(_uploadUrl!),
+          file,
+          fileLength,
+        );
+        request.headers.addAll({
           'Authorization': _uploadAuthToken!,
           'X-Bz-File-Name': Uri.encodeComponent(objectKey),
           'Content-Type': contentType,
-          'Content-Length': bytes.length.toString(),
           'X-Bz-Content-Sha1': sha1Hash,
-        },
-        body: bytes,
-      );
+        });
+        response = await http.Response.fromStream(
+          await client.send(request),
+        ).timeout(const Duration(minutes: 30));
+      } finally {
+        client.close();
+      }
 
       if (response.statusCode == 200) {
         return true;
@@ -262,7 +298,9 @@ class CloudStorageService extends ChangeNotifier {
     }
 
     final appDir = await getApplicationDocumentsDirectory();
-    final capturesDir = Directory('${appDir.path}/kosmos3d_projects/$projectId/captures');
+    final capturesDir = Directory(
+      '${appDir.path}/kosmos3d_projects/$projectId/captures',
+    );
 
     if (!await capturesDir.exists()) {
       _isUploading = false;
@@ -282,8 +320,12 @@ class CloudStorageService extends ChangeNotifier {
     }
 
     // Also upload trajectory if it exists
-    final trajectoryJson = File('${appDir.path}/kosmos3d_projects/$projectId/trajectory.json');
-    final trajectoryCsv = File('${appDir.path}/kosmos3d_projects/$projectId/trajectory.csv');
+    final trajectoryJson = File(
+      '${appDir.path}/kosmos3d_projects/$projectId/trajectory.json',
+    );
+    final trajectoryCsv = File(
+      '${appDir.path}/kosmos3d_projects/$projectId/trajectory.csv',
+    );
     final allFiles = [...files];
     if (await trajectoryJson.exists()) allFiles.add(trajectoryJson);
     if (await trajectoryCsv.exists()) allFiles.add(trajectoryCsv);
@@ -294,14 +336,17 @@ class CloudStorageService extends ChangeNotifier {
 
     for (final file in allFiles) {
       final fileName = file.path.split(Platform.pathSeparator).last;
-      _statusMessage = 'Uploading ${uploaded + 1}/${allFiles.length}: $fileName';
+      _statusMessage =
+          'Uploading ${uploaded + 1}/${allFiles.length}: $fileName';
       _progress = uploaded / allFiles.length;
       notifyListeners();
 
       bool success = await uploadFile(file, prefix: 'kosmos3d/$projectName');
       while (!success && retries < maxRetries) {
         retries++;
-        await Future.delayed(Duration(seconds: retries * 2)); // Exponential backoff
+        await Future.delayed(
+          Duration(seconds: retries * 2),
+        ); // Exponential backoff
         _statusMessage = 'Retrying ($retries/$maxRetries): $fileName';
         notifyListeners();
         success = await uploadFile(file, prefix: 'kosmos3d/$projectName');
@@ -322,5 +367,74 @@ class CloudStorageService extends ChangeNotifier {
     _statusMessage = 'All $uploaded files uploaded to B2!';
     notifyListeners();
     return true;
+  }
+
+  /// Upload a list of files to B2
+  Future<bool> uploadFiles(List<File> files, {String? projectName}) async {
+    if (files.isEmpty) return true;
+
+    _isUploading = true;
+    _progress = 0;
+    _lastError = null;
+    _statusMessage = 'Authenticating with Backblaze B2...';
+    notifyListeners();
+
+    final authorized = await _authorizeAccount();
+    if (!authorized) {
+      _isUploading = false;
+      _statusMessage = 'Authentication failed';
+      notifyListeners();
+      return false;
+    }
+
+    int uploaded = 0;
+    int retries = 0;
+    const maxRetries = 3;
+
+    final prefix = projectName != null ? 'kosmos3d/$projectName' : 'kosmos3d';
+
+    for (final file in files) {
+      final fileName = file.path.split(Platform.pathSeparator).last;
+      _statusMessage = 'Uploading ${uploaded + 1}/${files.length}: $fileName';
+      _progress = uploaded / files.length;
+      notifyListeners();
+
+      bool success = await uploadFile(file, prefix: prefix);
+      while (!success && retries < maxRetries) {
+        retries++;
+        await Future.delayed(Duration(seconds: retries * 2));
+        _statusMessage = 'Retrying ($retries/$maxRetries): $fileName';
+        notifyListeners();
+        success = await uploadFile(file, prefix: prefix);
+      }
+
+      if (!success) {
+        _isUploading = false;
+        _statusMessage = 'Upload failed at: $fileName';
+        notifyListeners();
+        return false;
+      }
+      uploaded++;
+      retries = 0;
+    }
+
+    _isUploading = false;
+    _progress = 1.0;
+    _statusMessage = 'All $uploaded files uploaded to B2!';
+    notifyListeners();
+    return true;
+  }
+}
+
+/// Streams originals without loading full-resolution videos into phone memory.
+class _FileUploadRequest extends http.BaseRequest {
+  _FileUploadRequest(Uri uri, this.file, int length) : super('POST', uri) {
+    contentLength = length;
+  }
+  final File file;
+  @override
+  http.ByteStream finalize() {
+    super.finalize();
+    return http.ByteStream(file.openRead());
   }
 }

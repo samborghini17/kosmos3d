@@ -6,6 +6,8 @@ class CameraDevice {
   int batteryLevel; // 0 to 100
   String storageRemaining; // e.g., "1h 45m" or "32GB"
   bool isRecording;
+  bool isWifiConnected;
+  String? wifiIpAddress;
   Map<String, String> currentSettings;
 
   String get displayName => customName != null && customName!.isNotEmpty ? customName! : name;
@@ -18,16 +20,10 @@ class CameraDevice {
     this.batteryLevel = 100,
     this.storageRemaining = "Unknown",
     this.isRecording = false,
+    this.isWifiConnected = false,
+    this.wifiIpAddress,
     Map<String, String>? currentSettings,
-  }) : currentSettings = currentSettings ?? {
-    'Resolution': '4K',
-    'FPS': '60',
-    'Lens': 'Linear',
-    'ISO Max': '400',
-    'Shutter': 'Auto',
-    'White Balance': '5500K',
-    'Bitrate': 'High'
-  };
+  }) : currentSettings = currentSettings ?? {};
 
   // Helper method to simulate a copy with changed state
   CameraDevice copyWith({
@@ -38,6 +34,8 @@ class CameraDevice {
     int? batteryLevel,
     String? storageRemaining,
     bool? isRecording,
+    bool? isWifiConnected,
+    String? wifiIpAddress,
     Map<String, String>? currentSettings,
   }) {
     return CameraDevice(
@@ -48,6 +46,8 @@ class CameraDevice {
       batteryLevel: batteryLevel ?? this.batteryLevel,
       storageRemaining: storageRemaining ?? this.storageRemaining,
       isRecording: isRecording ?? this.isRecording,
+      isWifiConnected: isWifiConnected ?? this.isWifiConnected,
+      wifiIpAddress: wifiIpAddress ?? this.wifiIpAddress,
       currentSettings: currentSettings ?? Map.from(this.currentSettings),
     );
   }

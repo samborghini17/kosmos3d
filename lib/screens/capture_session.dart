@@ -1,62 +1,63 @@
+import '../l10n/app_text.dart';
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:sensors_plus/sensors_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/scan_project.dart';
+import '../models/capture_point.dart';
 import '../providers/settings_provider.dart';
 import '../services/gopro_service.dart';
+import '../services/capture_coordinator.dart';
 import '../services/project_service.dart';
 import '../services/trajectory_service.dart';
-import '../services/audio_guide_service.dart';
+import '../services/orientation_service.dart';
+import '../widgets/gopro_media_transfer_dialog.dart';
+
+import '../widgets/camera_live_monitor.dart';
+import 'point_cloud_preview.dart';
 import '../services/lidar_service.dart';
-import 'export_screen.dart';
+import '../widgets/measured_cloud_view.dart';
 
-/// Data point for a single capture event.
-class CapturePoint {
-  final double latitude;
-  final double longitude;
-  final double heading; // compass heading in degrees
-  final DateTime timestamp;
-
-  CapturePoint({
-    required this.latitude,
-    required this.longitude,
-    required this.heading,
-    required this.timestamp,
-  });
-}
-
-/// The live capture session screen with coverage heatmap.
+/// The live capture session screen with coverage heatmap and 3D point cloud.
 class CaptureSessionScreen extends StatefulWidget {
   final ScanProject project;
+  final bool camerasPrepared;
 
-  const CaptureSessionScreen({super.key, required this.project});
+  const CaptureSessionScreen({
+    super.key,
+    required this.project,
+    this.camerasPrepared = false,
+  });
 
   @override
   State<CaptureSessionScreen> createState() => _CaptureSessionScreenState();
 }
 
-class _CaptureSessionScreenState extends State<CaptureSessionScreen> with TickerProviderStateMixin {
+class _CaptureSessionScreenState extends State<CaptureSessionScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late ScanProject _project;
-  bool _isCapturing = false;
+  late GoProService _goPro;
+  late OrientationService _orientation;
+  late TrajectoryService _trajectory;
+  late ProjectService _projects;
+  late LidarService _lidar;
+  bool _ending = false;
+  bool _isPreparing = false;
+  bool _allowPop = false;
+  bool get _isCapturing => _goPro.capture.busy || _isPreparing;
   int _sessionCaptureCount = 0;
   final Stopwatch _sessionTimer = Stopwatch();
   Timer? _uiTimer;
+  bool _showLiveMonitor = false;
 
-  // Coverage tracking
+  // Coverage & Spatial tracking
   final List<CapturePoint> _capturePoints = [];
-  double _currentHeading = 0;
   Position? _currentPosition;
-  StreamSubscription? _magnetometerSub;
-  bool _hasLocationPermission = false;
-
-  // Timelapse mode
-  bool _timelapseActive = false;
-  Timer? _timelapseTimer;
-  int _timelapseInterval = 5; // seconds
 
   // Quality scoring
   double _qualityScore = 0;
@@ -70,7 +71,15 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _project = widget.project;
+    _goPro = context.read<GoProService>();
+    _orientation = context.read<OrientationService>();
+    _trajectory = context.read<TrajectoryService>();
+    _projects = context.read<ProjectService>();
+    _lidar = context.read<LidarService>();
+    _goPro.capture.onPhoto = _recordPhoto;
+
     _sessionCaptureCount = _project.captureCount;
     _sessionTimer.start();
 
@@ -78,42 +87,112 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
       if (mounted) setState(() {});
     });
 
-    _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))
-      ..repeat(reverse: true);
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.06).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    _flashController = AnimationController(vsync: this, duration: const Duration(milliseconds: 150));
-    _flashAnimation = Tween<double>(begin: 0.0, end: 0.5).animate(
-      CurvedAnimation(parent: _flashController, curve: Curves.easeOut),
+    _flashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
     );
+    _flashAnimation = Tween<double>(
+      begin: 0.0,
+      end: 0.5,
+    ).animate(CurvedAnimation(parent: _flashController, curve: Curves.easeOut));
 
     _initSensors();
 
-    // Start trajectory and LiDAR recording
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TrajectoryService>().startRecording();
-      final lidar = context.read<LidarService>();
-      lidar.checkAvailability().then((_) {
-        if (lidar.isAvailable) {
-          lidar.startCapture(outputDir: '${_project.id}/lidar');
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      _orientation.start();
+      final settings = context.read<SettingsProvider>();
+      _trajectory.configure(
+        sensorRateMs: settings.sensorRate,
+        gpsRateSec: settings.gpsRate,
+        recordBarometer: settings.recordBarometer,
+      );
+      final sessionDocs = await getApplicationDocumentsDirectory();
+      if (!mounted) return;
+      try {
+        await _trajectory.startRecording(
+          outputDirectory:
+              '${sessionDocs.path}/kosmos3d_projects/${_project.id}/sensors',
+        );
+      } catch (e) {
+        _showError('Sensor recording failed: $e');
+      }
+      if (!mounted) {
+        await _trajectory.stopRecording();
+        return;
+      }
+      await _lidar.checkAvailability();
+      if (mounted && settings.coverageVisualizer && _lidar.isAvailable) {
+        final docs = await getApplicationDocumentsDirectory();
+        if (mounted) {
+          await _lidar.startCapture(
+            outputDir: '${docs.path}/kosmos3d_projects/${_project.id}/depth',
+          );
         }
-      });
+      }
+      if (!mounted) return;
+      // New projects arrive already prepared. Resumed projects must synchronize.
+      if (!widget.camerasPrepared ||
+          _goPro.capture.phase != CapturePhase.ready) {
+        await _prepare();
+      }
     });
   }
 
-  Future<void> _initSensors() async {
-    // Magnetometer for compass heading (portrait mode — phone upright)
-    _magnetometerSub = magnetometerEventStream().listen((event) {
-      // Portrait: phone Y-axis points up, X-axis points right
-      // atan2(x, y) gives heading where 0° = North (towards top of phone)
-      double heading = atan2(event.x, event.y) * (180 / pi);
-      if (heading < 0) heading += 360;
-      heading = (360 - heading) % 360; // Correct for clockwise bearing
-      setState(() => _currentHeading = heading);
-    });
+  Future<void> _prepare() async {
+    if (_isPreparing) return;
+    setState(() => _isPreparing = true);
+    try {
+      await _goPro.prepareCapture(
+        _project.captureMode,
+        _project.cameraSettings,
+      );
+    } catch (e) {
+      _showError(e);
+    } finally {
+      if (mounted) setState(() => _isPreparing = false);
+    }
+  }
 
+  Future<void> _reconnectAndStop() async {
+    if (_isPreparing) return;
+    setState(() => _isPreparing = true);
+    final failures = <String>[];
+    try {
+      for (final id in _goPro.capture.cameraIds) {
+        try {
+          await _goPro.disconnectDevice(id);
+          await _goPro.connectToDevice(id);
+        } catch (e) {
+          failures.add('$id: $e');
+        }
+      }
+      await _goPro.capture.stop();
+      if (failures.isNotEmpty) _showError(failures.join('; '));
+    } catch (e) {
+      _showError(e);
+    } finally {
+      if (mounted) setState(() => _isPreparing = false);
+    }
+  }
+
+  void _showError(Object error) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: AppText('$error'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  Future<void> _initSensors() async {
     // GPS
     try {
       final permission = await Geolocator.checkPermission();
@@ -121,8 +200,8 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
         await Geolocator.requestPermission();
       }
       final perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
-        _hasLocationPermission = true;
+      if (perm == LocationPermission.whileInUse ||
+          perm == LocationPermission.always) {
         _currentPosition = await Geolocator.getCurrentPosition();
       }
     } catch (e) {
@@ -131,16 +210,29 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.detached) &&
+        _goPro.capture.active) {
+      unawaited(
+        _goPro.capture.stop().catchError((Object e) {
+          _showError(e);
+        }),
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _uiTimer?.cancel();
-    _timelapseTimer?.cancel();
     _sessionTimer.stop();
     _pulseController.dispose();
     _flashController.dispose();
-    _magnetometerSub?.cancel();
-    // Stop trajectory and LiDAR recording
-    try { context.read<TrajectoryService>().stopRecording(); } catch (_) {}
-    try { context.read<LidarService>().stopCapture(); } catch (_) {}
+    _goPro.capture.onPhoto = null;
+    _orientation.stop();
+    _trajectory.stopRecording();
+    unawaited(_lidar.stopCapture());
     super.dispose();
   }
 
@@ -153,134 +245,174 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
     return '$m:$s';
   }
 
+  bool get _isRecordingContinuous => _goPro.capture.active;
+
   Future<void> _triggerCapture() async {
-    if (_isCapturing) return;
+    if (_ending || _isPreparing) return;
+    try {
+      if (_goPro.capture.active) {
+        await _goPro.capture.stop();
+      } else {
+        await _goPro.stopAllPreviews();
+        if (mounted) setState(() => _showLiveMonitor = false);
+        await _goPro.capture.toggle();
+      }
+    } catch (e) {
+      _showError(e);
+    }
+  }
 
-    final goPro = context.read<GoProService>();
-    final connectedCams = goPro.devices.where((d) => d.isConnected).toList();
+  Future<void> _recordPhoto(DateTime dispatchTime) async {
+    _currentPosition = _trajectory.latestPosition;
+    final heading = _orientation.heading;
+    final pitch = _orientation.pitch;
+    final roll = _orientation.roll;
+    _capturePoints.add(
+      CapturePoint(
+        latitude: _currentPosition?.latitude ?? 0,
+        longitude: _currentPosition?.longitude ?? 0,
+        altitude: _currentPosition?.altitude ?? 0,
+        heading: heading,
+        pitch: pitch,
+        roll: roll,
+        timestamp: dispatchTime,
+      ),
+    );
+    _trajectory.recordCapturePoint(
+      _sessionCaptureCount,
+      timestamp: dispatchTime,
+      heading: heading,
+      pitch: pitch,
+      roll: roll,
+      quaternion: _orientation.quaternion,
+    );
+    _sessionCaptureCount++;
+    _project.captureCount = _sessionCaptureCount;
+    _qualityScore = _calculateQualityScore();
+    await _projects.updateProject(_project);
+    final captures = await _projects.getProjectCapturesPath(_project.id);
+    final event = <String, dynamic>{
+      ..._trajectory.points.last.toJson(),
+      'event_type': 'acknowledged_shutter_dispatch',
+      'exposure_timestamp_verified': false,
+      'camera_ids': _goPro.capture.cameraIds,
+      'camera_dispatch_timing': _goPro.capture.lastDispatch,
+      'orientation_valid': _orientation.hasSample,
+      'orientation_sample_utc': _orientation.sampleTime
+          ?.toUtc()
+          .toIso8601String(),
+    };
+    await File('$captures/../shutter_events.jsonl').writeAsString(
+      '${jsonEncode(event)}\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+    if (mounted) {
+      setState(() {});
+      HapticFeedback.lightImpact();
+      _flashController.forward().then((_) {
+        if (mounted) _flashController.reverse();
+      });
+    }
+  }
 
-    if (connectedCams.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No cameras connected!'), backgroundColor: Colors.redAccent),
-      );
+  Future<void> _syncHotspotCaptures() async {
+    if (_goPro.capture.active || _isCapturing) {
+      _showError('Stop capture before transferring media');
       return;
     }
-
-    setState(() => _isCapturing = true);
-
-    // Quality-based haptic feedback
-    final preCaptureCoverage = _coveragePercentage;
-    HapticFeedback.heavyImpact();
-    _flashController.forward().then((_) => _flashController.reverse());
-
-    // Get current position for coverage tracking
-    if (_hasLocationPermission) {
-      try {
-        _currentPosition = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-        );
-      } catch (_) {}
-    }
-
-    // Record capture point
-    _capturePoints.add(CapturePoint(
-      latitude: _currentPosition?.latitude ?? 0,
-      longitude: _currentPosition?.longitude ?? 0,
-      heading: _currentHeading,
-      timestamp: DateTime.now(),
-    ));
-
-    // Record trajectory point
-    context.read<TrajectoryService>().recordCapturePoint(_sessionCaptureCount);
-
-    // Capture LiDAR frame
-    final lidar = context.read<LidarService>();
-    if (lidar.isAvailable && lidar.isCapturing) {
-      await lidar.captureDepthFrame(_sessionCaptureCount);
-    }
-
-    // Trigger shutter on all cameras
-    await goPro.triggerAllShutters();
-
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // Quality-based haptic: double vibrate if coverage improved significantly
-    final postCaptureCoverage = _coveragePercentage;
-    if (postCaptureCoverage - preCaptureCoverage > 2) {
-      HapticFeedback.mediumImpact();
-    }
-
-    // Calculate quality score
-    _qualityScore = _calculateQualityScore();
-
-    setState(() {
-      _sessionCaptureCount++;
-      _isCapturing = false;
-    });
-
-    // Audio guidance feedback
-    final audioGuide = context.read<AudioGuideService>();
-    if (_capturePoints.length >= 2) {
-      final last = _capturePoints.last;
-      final prev = _capturePoints[_capturePoints.length - 2];
-      final angleDiff = (last.heading - prev.heading).abs();
-      final normalizedDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
-      if (normalizedDiff > 40) {
-        audioGuide.warnLargeGap(normalizedDiff.toInt());
-      } else if (normalizedDiff < 5) {
-        audioGuide.warnTooClose();
-      }
-    }
-    if (postCaptureCoverage >= 90 && preCaptureCoverage < 90) {
-      audioGuide.announceGoodCoverage(postCaptureCoverage.toInt());
-    }
-
-    // Update project
-    _project.captureCount = _sessionCaptureCount;
-    final projectService = context.read<ProjectService>();
-    await projectService.updateProject(_project);
+    final root = await getApplicationDocumentsDirectory();
+    if (!mounted) return;
+    await GoProMediaTransferDialog.show(
+      context,
+      projectCapturesPath:
+          '${root.path}/kosmos3d_projects/${_project.id}/captures',
+    );
   }
 
   Future<void> _endSession() async {
-    final result = await showDialog<bool>(
+    if (_ending || _isPreparing) return;
+    _ending = true;
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('End Capture Phase?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          '$_sessionCaptureCount frames captured.\nReady to process or export data?',
-          style: const TextStyle(color: Colors.white70),
+        title: const AppText(
+          'End Session?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppText(
+              '$_sessionCaptureCount frames captured.\nProject will be saved.',
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(
+                Icons.wifi_tethering,
+                size: 16,
+                color: Colors.lightBlueAccent,
+              ),
+              label: const AppText(
+                'Import camera originals',
+                style: TextStyle(color: Colors.lightBlueAccent, fontSize: 12),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx, false);
+                _syncHotspotCaptures();
+              },
+            ),
+          ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Resume')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const AppText('Continue'),
+          ),
+          TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('End Capture & Go to Export', style: TextStyle(color: Colors.black)),
+            child: AppText(
+              'End Session',
+              style: TextStyle(color: Theme.of(context).primaryColor),
+            ),
           ),
         ],
       ),
     );
 
-    if (result == true && mounted) {
-      _sessionTimer.stop();
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => ExportScreen(project: _project)),
-      );
+    try {
+      if (confirmed == true && mounted) {
+        await _goPro.capture.stop();
+        await _lidar.stopCapture();
+        if (_lidar.depthFrameCount > 0) await _lidar.exportPointCloud();
+        await _trajectory.stopRecording();
+        _sessionTimer.stop();
+        if (mounted) {
+          setState(() => _allowPop = true);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) Navigator.pop(context);
+          });
+        }
+      }
+    } catch (e) {
+      _showError(e);
+    } finally {
+      _ending = false;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final settings = context.watch<SettingsProvider>();
     final goPro = context.watch<GoProService>();
     final connectedCams = goPro.devices.where((d) => d.isConnected).toList();
     final screenSize = MediaQuery.of(context).size;
     final primaryColor = Theme.of(context).primaryColor;
 
     return PopScope(
-      canPop: false,
+      canPop: _allowPop,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _endSession();
       },
@@ -293,28 +425,75 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                 children: [
                   // ─── Top Bar ───
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     child: Row(
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70, size: 22),
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.white70,
+                            size: 22,
+                          ),
                           onPressed: _endSession,
                         ),
                         Expanded(
-                          child: Text(
+                          child: AppText(
                             _project.name,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                             textAlign: TextAlign.center,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        IconButton(
+                          icon: Icon(
+                            _showLiveMonitor
+                                ? Icons.view_in_ar
+                                : Icons.videocam,
+                            color: _showLiveMonitor
+                                ? Colors.redAccent
+                                : Colors.white70,
+                            size: 20,
+                          ),
+                          tooltip: _showLiveMonitor
+                              ? 'Show 3D Scanner HUD'
+                              : 'Live Camera Viewfinder',
+                          onPressed: () => setState(
+                            () => _showLiveMonitor = !_showLiveMonitor,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.wifi_tethering,
+                            color: Colors.lightBlueAccent,
+                            size: 20,
+                          ),
+                          tooltip: 'Sync captures via Hotspot',
+                          onPressed: _syncHotspotCaptures,
+                        ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Text(_elapsedTime, style: const TextStyle(color: Colors.white70, fontFamily: 'monospace', fontSize: 13)),
+                          child: AppText(
+                            _elapsedTime,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontFamily: 'monospace',
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -331,20 +510,43 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                         final cam = connectedCams[index];
                         return Container(
                           margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.05),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: primaryColor.withValues(alpha: 0.2)),
+                            border: Border.all(
+                              color: primaryColor.withValues(alpha: 0.2),
+                            ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.camera_alt, size: 14, color: primaryColor),
+                              Icon(
+                                Icons.camera_alt,
+                                size: 14,
+                                color: primaryColor,
+                              ),
                               const SizedBox(width: 6),
-                              Text(cam.name, style: const TextStyle(color: Colors.white, fontSize: 11)),
+                              AppText(
+                                cam.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                ),
+                              ),
                               const SizedBox(width: 6),
-                              Text('${cam.batteryLevel}%', style: TextStyle(color: cam.batteryLevel > 20 ? Colors.white54 : Colors.redAccent, fontSize: 11)),
+                              AppText(
+                                '${cam.batteryLevel}%',
+                                style: TextStyle(
+                                  color: cam.batteryLevel > 20
+                                      ? Colors.white54
+                                      : Colors.redAccent,
+                                  fontSize: 11,
+                                ),
+                              ),
                             ],
                           ),
                         );
@@ -354,18 +556,32 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
 
                   const SizedBox(height: 8),
 
-                  // ─── Coverage Heatmap ───
+                  // ─── Live Viewfinder or 3D SLAM Visualizer ───
                   Expanded(
                     flex: 3,
-                    child: _buildCoverageWidget(primaryColor),
+                    child: _showLiveMonitor
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: CameraLiveMonitor(
+                              onClose: () =>
+                                  setState(() => _showLiveMonitor = false),
+                            ),
+                          )
+                        : _buildCoverageWidget(primaryColor),
                   ),
 
                   // ─── AI Capture Hint ───
                   if (_capturePoints.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 4,
+                      ),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: _coveragePercentage >= 90
                               ? primaryColor.withValues(alpha: 0.15)
@@ -375,16 +591,22 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                         child: Row(
                           children: [
                             Icon(
-                              _coveragePercentage >= 90 ? Icons.check_circle : Icons.assistant_navigation,
+                              _coveragePercentage >= 90
+                                  ? Icons.check_circle
+                                  : Icons.assistant_navigation,
                               size: 16,
-                              color: _coveragePercentage >= 90 ? primaryColor : Colors.orange,
+                              color: _coveragePercentage >= 90
+                                  ? primaryColor
+                                  : Colors.orange,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(
+                              child: AppText(
                                 _getAiHint(),
                                 style: TextStyle(
-                                  color: _coveragePercentage >= 90 ? primaryColor : Colors.orange,
+                                  color: _coveragePercentage >= 90
+                                      ? primaryColor
+                                      : Colors.orange,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -401,14 +623,23 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
+                        AppText(
                           '$_sessionCaptureCount',
-                          style: TextStyle(color: primaryColor, fontSize: 48, fontWeight: FontWeight.w200, fontFamily: 'monospace'),
+                          style: TextStyle(
+                            color: primaryColor,
+                            fontSize: 48,
+                            fontWeight: FontWeight.w200,
+                            fontFamily: 'monospace',
+                          ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          settings.translate('captures'),
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12, letterSpacing: 2),
+                        AppText(
+                          'SHUTTER EVENTS',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 12,
+                            letterSpacing: 2,
+                          ),
                         ),
                       ],
                     ),
@@ -423,22 +654,41 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                         return Transform.scale(
                           scale: _isCapturing ? 0.92 : _pulseAnimation.value,
                           child: GestureDetector(
-                            onTap: _triggerCapture,
+                            onTap: (_isCapturing && !_isRecordingContinuous)
+                                ? null
+                                : _triggerCapture,
                             child: Container(
                               width: screenSize.width * 0.28,
                               height: screenSize.width * 0.28,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 gradient: RadialGradient(
-                                  colors: [primaryColor, primaryColor.withValues(alpha: 0.7)],
+                                  colors: _isRecordingContinuous
+                                      ? [Colors.redAccent, Colors.red]
+                                      : [
+                                          primaryColor,
+                                          primaryColor.withValues(alpha: 0.7),
+                                        ],
                                 ),
                                 boxShadow: [
-                                  BoxShadow(color: primaryColor.withValues(alpha: 0.35), blurRadius: 25, spreadRadius: 6),
+                                  BoxShadow(
+                                    color:
+                                        (_isRecordingContinuous
+                                                ? Colors.red
+                                                : primaryColor)
+                                            .withValues(alpha: 0.35),
+                                    blurRadius: 25,
+                                    spreadRadius: 6,
+                                  ),
                                 ],
                               ),
                               child: Center(
                                 child: Icon(
-                                  _project.captureMode == 'video' ? Icons.videocam : Icons.camera_alt,
+                                  _isRecordingContinuous
+                                      ? Icons.stop
+                                      : (_project.captureMode == 'video'
+                                            ? Icons.videocam
+                                            : Icons.camera_alt),
                                   size: 36,
                                   color: Colors.black,
                                 ),
@@ -450,96 +700,75 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
                     ),
                   ),
 
-                  // ─── Timelapse Toggle ───
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
-                    child: Row(
-                      children: [
-                        Icon(Icons.timer, size: 14, color: _timelapseActive ? primaryColor : Colors.white38),
-                        const SizedBox(width: 6),
-                        Text(settings.translate('timelapse_mode'),
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
-                        const Spacer(),
-                        if (_timelapseActive)
-                          GestureDetector(
-                            onTap: _showTimelapseSettings,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: primaryColor.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  Text('${_timelapseInterval}s',
-                                      style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 4),
-                                  Icon(Icons.edit, size: 12, color: primaryColor),
-                                ],
-                              ),
-                            ),
-                          ),
-                        Switch(
-                          value: _timelapseActive,
-                          activeColor: primaryColor,
-                          onChanged: (val) {
-                            if (val && _timelapseInterval == 5 && !_timelapseActive) { // Default starting point or give user choice
-                               _toggleTimelapse(val);
-                            } else {
-                               _toggleTimelapse(val);
-                            }
-                          },
-                        ),
-                      ],
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: AppText(
+                      _goPro.capture.progress,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _goPro.capture.error == null
+                            ? Colors.white70
+                            : Colors.redAccent,
+                      ),
                     ),
                   ),
+                  if (_goPro.capture.phase == CapturePhase.fault &&
+                      _goPro.capture.active)
+                    TextButton(
+                      onPressed: _isPreparing ? null : _reconnectAndStop,
+                      child: const AppText('Reconnect cameras and retry Stop'),
+                    ),
+                  if (_goPro.capture.phase == CapturePhase.fault &&
+                      !_goPro.capture.active)
+                    TextButton(
+                      onPressed: _isCapturing ? null : _prepare,
+                      child: const AppText('Synchronize again'),
+                    ),
+                  if ((_project.cameraSettings['Interval'] ?? 'Off') != 'Off')
+                    const AppText(
+                      'Interval is a minimum delay after processing; timing may vary.',
+                      style: TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
 
                   // ─── Bottom Info ───
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 8,
+                    ),
                     margin: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildBottomStat(Icons.camera_alt, '${connectedCams.length}', 'Cams'),
-                        _buildBottomStat(Icons.aspect_ratio, _project.cameraSettings['Resolution'] ?? '4K', 'Res'),
-                        _buildBottomStat(Icons.explore, '${_currentHeading.toInt()}°', 'Heading'),
                         _buildBottomStat(
-                          _coveragePercentage > 80 ? Icons.check_circle : Icons.pie_chart,
-                          '${_coveragePercentage.toInt()}%',
-                          'Coverage',
+                          Icons.camera_alt,
+                          '${connectedCams.length}',
+                          'Cams',
                         ),
-                        _buildBottomStat(Icons.star, '${_qualityScore.toInt()}', 'Score'),
+                        _buildBottomStat(
+                          Icons.aspect_ratio,
+                          _project.cameraSettings['Resolution'] ?? '4K',
+                          'Res',
+                        ),
+                        _buildBottomStat(
+                          Icons.explore,
+                          '${context.watch<OrientationService>().heading.toInt()}°',
+                          'Heading',
+                        ),
+                        _buildBottomStat(
+                          _coveragePercentage > 80
+                              ? Icons.check_circle
+                              : Icons.pie_chart,
+                          '${_coveragePercentage.toInt()}%',
+                          'Heading coverage',
+                        ),
+                        _buildBottomStat(
+                          Icons.star,
+                          '${_qualityScore.toInt()}',
+                          'Score',
+                        ),
                       ],
                     ),
-                  ),
-                  
-                  // ─── LiDAR Status ───
-                  Consumer<LidarService>(
-                    builder: (context, lidar, child) {
-                      if (!lidar.isAvailable) return const SizedBox.shrink();
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8, left: 24, right: 24),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: primaryColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: primaryColor.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.radar, size: 14, color: primaryColor),
-                            const SizedBox(width: 8),
-                            Text(
-                              'LiDAR Active: ${lidar.depthFrameCount} frames',
-                              style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
                   ),
                 ],
               ),
@@ -550,7 +779,11 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
               animation: _flashAnimation,
               builder: (context, child) {
                 return _flashAnimation.value > 0
-                    ? Container(color: Colors.white.withValues(alpha: _flashAnimation.value))
+                    ? Container(
+                        color: Colors.white.withValues(
+                          alpha: _flashAnimation.value,
+                        ),
+                      )
                     : const SizedBox.shrink();
               },
             ),
@@ -578,40 +811,51 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
   }
 
   Widget _buildCoverageWidget(Color primaryColor) {
+    final settings = context.watch<SettingsProvider>();
+    final lidar = context.watch<LidarService>();
+    if (!settings.coverageVisualizer) {
+      return Center(child: AppText(settings.translate('coverage_disabled')));
+    }
+    if (lidar.isAvailable) return const MeasuredCloudView();
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
-      child: _capturePoints.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.radar, size: 48, color: Colors.white.withValues(alpha: 0.15)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Coverage map will appear here',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 13),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Start capturing to track coverage',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 11),
-                  ),
-                ],
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const PointCloudPreviewScreen()),
+        ),
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(6),
+              child: AppText(
+                'GPS path and phone orientation (approximate)',
+                style: TextStyle(color: Colors.white54, fontSize: 11),
               ),
-            )
-          : CustomPaint(
-              painter: CoverageHeatmapPainter(
-                capturePoints: _capturePoints,
-                currentHeading: _currentHeading,
-                primaryColor: primaryColor,
-              ),
-              child: const SizedBox.expand(),
             ),
+            Expanded(
+              child: CustomPaint(
+                painter: Trajectory3DPainter(
+                  points: _trajectory.points
+                      .where((p) => p.gpsTimestamp != null)
+                      .toList(),
+                  rotX: 0.35,
+                  rotY: 0,
+                  zoom: 1,
+                  pan: Offset.zero,
+                  primaryColor: primaryColor,
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -621,53 +865,22 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
       children: [
         Icon(icon, size: 16, color: Colors.white54),
         const SizedBox(height: 2),
-        Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 9)),
-      ],
-    );
-  }
-
-  // ─── TIMELAPSE ──────────────────────────────────────────────
-
-  void _toggleTimelapse(bool active) {
-    setState(() => _timelapseActive = active);
-    if (active) {
-      _timelapseTimer?.cancel();
-      _timelapseTimer = Timer.periodic(Duration(seconds: _timelapseInterval), (_) {
-        if (!_isCapturing) _triggerCapture();
-      });
-    } else {
-      _timelapseTimer?.cancel();
-    }
-  }
-
-  void _showTimelapseSettings() {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text('Auto-Trigger Interval', style: TextStyle(color: Colors.white, fontSize: 16)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [3, 5, 10, 15, 30].map((sec) {
-              return ListTile(
-                title: Text('$sec Seconds', style: const TextStyle(color: Colors.white70)),
-                trailing: _timelapseInterval == sec
-                    ? Icon(Icons.check, color: Theme.of(context).primaryColor)
-                    : null,
-                onTap: () {
-                  setState(() => _timelapseInterval = sec);
-                  if (_timelapseActive) {
-                    _toggleTimelapse(true); // Restart timer with new interval
-                  }
-                  Navigator.pop(ctx);
-                },
-              );
-            }).toList(),
+        AppText(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
           ),
-        );
-      },
+        ),
+        AppText(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.4),
+            fontSize: 9,
+          ),
+        ),
+      ],
     );
   }
 
@@ -683,7 +896,8 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
     // Overlap consistency contributes 30%
     double overlapScore = 0;
     for (int i = 1; i < _capturePoints.length; i++) {
-      final angleDiff = (_capturePoints[i].heading - _capturePoints[i - 1].heading).abs();
+      final angleDiff =
+          (_capturePoints[i].heading - _capturePoints[i - 1].heading).abs();
       final normalizedDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
       // Ideal overlap: 15-30 degrees between captures
       if (normalizedDiff >= 10 && normalizedDiff <= 35) {
@@ -704,8 +918,12 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
 
   /// AI Capture Hint: Analyzes coverage gaps, overlap, speed, and suggests direction.
   String _getAiHint() {
-    if (_coveragePercentage >= 95) return '✅ Excellent coverage! Quality: ${_qualityScore.toInt()}/100';
-    if (_coveragePercentage >= 90) return '🎯 Great coverage. A few more for safety.';
+    if (_coveragePercentage >= 95) {
+      return 'Heading sweep complete; inspect overlap and surface coverage separately.';
+    }
+    if (_coveragePercentage >= 90) {
+      return 'Most headings sampled; object coverage is not measured.';
+    }
 
     // Check overlap between last captures
     if (_capturePoints.length >= 2) {
@@ -750,13 +968,19 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen> with Ticker
       if (!sectors[i % 36]) {
         if (curStart == -1) curStart = i;
         curLen++;
-        if (curLen > maxGapLen) { maxGapLen = curLen; maxGapStart = curStart; }
+        if (curLen > maxGapLen) {
+          maxGapLen = curLen;
+          maxGapStart = curStart;
+        }
       } else {
-        curStart = -1; curLen = 0;
+        curStart = -1;
+        curLen = 0;
       }
     }
 
-    if (maxGapLen == 0) return '🔄 Good coverage. Keep scanning for density.';
+    if (maxGapLen == 0) {
+      return 'Headings sampled. Add different heights and inspect overlap.';
+    }
 
     final gapCenter = ((maxGapStart + maxGapLen / 2) % 36) * 10;
     final directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -809,11 +1033,34 @@ class CoverageHeatmapPainter extends CustomPainter {
     }
 
     // Draw compass labels
-    final textStyle = TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 10);
-    _drawText(canvas, 'N', Offset(center.dx - 4, center.dy - radius - 14), textStyle);
-    _drawText(canvas, 'E', Offset(center.dx + radius + 4, center.dy - 5), textStyle);
-    _drawText(canvas, 'S', Offset(center.dx - 4, center.dy + radius + 4), textStyle);
-    _drawText(canvas, 'W', Offset(center.dx - radius - 14, center.dy - 5), textStyle);
+    final textStyle = TextStyle(
+      color: Colors.white.withValues(alpha: 0.4),
+      fontSize: 10,
+    );
+    _drawText(
+      canvas,
+      'N',
+      Offset(center.dx - 4, center.dy - radius - 14),
+      textStyle,
+    );
+    _drawText(
+      canvas,
+      'E',
+      Offset(center.dx + radius + 4, center.dy - 5),
+      textStyle,
+    );
+    _drawText(
+      canvas,
+      'S',
+      Offset(center.dx - 4, center.dy + radius + 4),
+      textStyle,
+    );
+    _drawText(
+      canvas,
+      'W',
+      Offset(center.dx - radius - 14, center.dy - 5),
+      textStyle,
+    );
 
     // Draw coverage sectors (36 sectors of 10°)
     final sectorCounts = List<int>.filled(36, 0);
@@ -845,7 +1092,10 @@ class CoverageHeatmapPainter extends CustomPainter {
       final rad = (p.heading - 90) * pi / 180;
       // Place dots at varying distances from center to avoid overlap
       final dist = radius * 0.3 + (i % 5) * (radius * 0.12);
-      final dotPos = Offset(center.dx + dist * cos(rad), center.dy + dist * sin(rad));
+      final dotPos = Offset(
+        center.dx + dist * cos(rad),
+        center.dy + dist * sin(rad),
+      );
 
       final dotPaint = Paint()
         ..color = primaryColor
@@ -867,12 +1117,19 @@ class CoverageHeatmapPainter extends CustomPainter {
     canvas.drawLine(center, arrowEnd, arrowPaint);
 
     // Arrow tip
-    canvas.drawCircle(arrowEnd, 4, Paint()..color = Colors.white.withValues(alpha: 0.7));
+    canvas.drawCircle(
+      arrowEnd,
+      4,
+      Paint()..color = Colors.white.withValues(alpha: 0.7),
+    );
   }
 
   void _drawText(Canvas canvas, String text, Offset offset, TextStyle style) {
     final textSpan = TextSpan(text: text, style: style);
-    final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    );
     textPainter.layout();
     textPainter.paint(canvas, offset);
   }

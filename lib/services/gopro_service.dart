@@ -3,24 +3,20 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/camera_device.dart';
-
-/// Returns true if running on iOS
-bool get isIOS {
-  if (kIsWeb) return false;
-  try { return Platform.isIOS; } catch (_) { return false; }
-}
-
-/// Returns true if running on Android
-bool get isAndroid {
-  if (kIsWeb) return false;
-  try { return Platform.isAndroid; } catch (_) { return false; }
-}
+import '../models/import_report.dart';
+import 'package:crypto/crypto.dart';
+import 'gopro_protocol.dart';
+import 'capture_coordinator.dart';
+import 'system_settings_service.dart';
+import 'media_inventory.dart';
 
 /// Open GoPro BLE Protocol UUIDs
 class GoProUuids {
+  static final wifiSsid = Guid('b5f90002-aa8d-11e3-9046-0002a5d5c51b');
+  static final wifiPassword = Guid('b5f90003-aa8d-11e3-9046-0002a5d5c51b');
   static final service = Guid('0000fea6-0000-1000-8000-00805f9b34fb');
   static final commandReq = Guid('b5f90072-aa8d-11e3-9046-0002a5d5c51b');
   static final commandResp = Guid('b5f90073-aa8d-11e3-9046-0002a5d5c51b');
@@ -30,54 +26,140 @@ class GoProUuids {
   static final queryResp = Guid('b5f90077-aa8d-11e3-9046-0002a5d5c51b');
 }
 
+/// Represents a media file residing on a GoPro's SD card
+class GoProMediaItem {
+  final String cameraName;
+  final String cameraId;
+  final String ip;
+  final String directory;
+  final String filename;
+  final String url;
+  final int sizeBytes;
+  final DateTime? modifiedTime;
+  final bool isVideo;
+
+  GoProMediaItem({
+    required this.cameraName,
+    this.cameraId = '',
+    required this.ip,
+    required this.directory,
+    required this.filename,
+    required this.url,
+    this.sizeBytes = 0,
+    this.modifiedTime,
+    this.isVideo = false,
+  });
+
+  String get displayName => filename;
+
+  String get formattedSize {
+    if (sizeBytes <= 0) return '';
+    if (sizeBytes < 1024 * 1024) {
+      return '${(sizeBytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+}
+
 /// Open GoPro Setting IDs and their value mappings
 class GoProSettings {
   // Setting ID 2: Resolution
   static const int resolutionId = 2;
   static const Map<String, int> resolution = {
-    '1080p': 9, '2.7K': 4, '4K': 1, '5.3K': 100,
+    '1080p': 9,
+    '2.7K': 4,
+    '4K': 1,
+    '5.3K': 100,
   };
 
   // Setting ID 3: FPS
   static const int fpsId = 3;
-  static const Map<String, int> fps = {
-    '24': 10, '30': 8, '60': 5, '120': 0,
+  static const Map<String, int> fps = {'24': 10, '30': 8, '60': 5, '120': 0};
+
+  // Setting ID 121: Digital Lens (Video)
+  static const int videoLensId = 121;
+  static const Map<String, int> videoLens = {
+    'Wide': 0,
+    'Linear': 4,
+    'SuperView': 3,
   };
 
-  // Setting ID 121: Digital Lens / FOV
-  static const int lensId = 121;
-  static const Map<String, int> lens = {
-    'Wide': 0, 'Linear': 4, 'SuperView': 3,
+  // Setting ID 122: Digital Lens (Photo)
+  static const int photoLensId = 122;
+  static const Map<String, int> photoLens = {'Wide': 31, 'Linear': 32};
+
+  // Protune IDs are not part of the published Open GoPro setting table.
+  // Never send speculative registers for ISO, WB or shutter.
+  static const int bitrateId = 182;
+  static const Map<String, int> bitrate = {'Standard': 0, 'High': 1};
+
+  // Setting ID 125: Photo Output (Standard, RAW, HDR, SuperPhoto)
+  static const int photoOutputId = 125;
+  static const Map<String, int> photoOutput = {
+    'Standard Photo': 0,
+    'Standard': 0,
+    'RAW': 1,
+    'HDR': 2,
+    'SuperPhoto': 3,
+    'Super Photo': 3,
   };
 
-  // Setting ID 13: Max ISO (Video)
-  static const int isoMaxId = 13;
-  static const Map<String, int> isoMax = {
-    '100': 24, '200': 25, '400': 26, '800': 27, '1600': 28,
+  // Setting ID 20: SuperPhoto / Processing Mode
+  static const int superPhotoId = 20;
+  static const Map<String, int> superPhoto = {
+    'Off': 0,
+    'Standard Photo': 0,
+    'Auto': 1,
+    'HDR': 2,
+    'SuperPhoto': 3,
+    'RAW': 4,
   };
 
-  // Setting ID 19: Auto Shutter
-  static const int shutterId = 19;
-  static const Map<String, int> shutter = {
-    'Auto': 0, '1/60': 5, '1/120': 6, '1/240': 8, '1/480': 10,
+  // Setting ID 30: TimeLapse Interval
+  static const int timeLapseIntervalId = 30;
+  static const Map<String, int> timeLapseInterval = {
+    '0.5s': 0,
+    '1s': 1,
+    '2s': 2,
+    '5s': 3,
+    '10s': 4,
+    '30s': 5,
+    '60s': 6,
   };
 
-  // Setting ID 11: White Balance
-  static const int whiteBalanceId = 11;
-  static const Map<String, int> whiteBalance = {
-    'Auto': 0, '3200K': 2, '4000K': 5, '5500K': 6, '6500K': 7,
+  // Setting ID 171: Photo Single Interval
+  static const int photoSingleIntervalId = 171;
+  static const Map<String, int> photoSingleInterval = {
+    'Off': 0,
+    '0.5s': 2,
+    '1s': 3,
+    '2s': 4,
+    '5s': 5,
+    '10s': 6,
+    '30s': 7,
+    '60s': 8,
   };
 
-  // Setting ID 192: Bitrate
-  static const int bitrateId = 192;
-  static const Map<String, int> bitrate = {
-    'Standard': 0, 'High': 1,
-  };
+  // Setting ID 97: Photo Timer
+  static const int photoTimerId = 97;
+  static const Map<String, int> photoTimer = {'Off': 0, '3s': 1, '10s': 2};
+
+  // Setting ID 227: Photo Mode (0=SuperPhoto/Single, 1=Night Photo, 2=Burst)
+  static const int photoModeId = 227;
 
   // Preset Group IDs for mode switching
   static const int presetGroupVideo = 1000;
   static const int presetGroupPhoto = 1001;
   static const int presetGroupTimelapse = 1002;
+
+  // These identify discovered presets; they are NOT legacy mode commands.
+  static const int flatModeVideo = 12;
+  static const int flatModePhoto = 16;
+  static const int flatModeTimelapseVideo = 13;
+  static const int flatModeTimelapsePhoto = 20;
+  static const int flatModeNightPhoto = 18;
+  static const int flatModeNightLapse = 21;
+  static const int flatModeBurstPhoto = 19;
 }
 
 /// Abstract camera service interface for future extensibility
@@ -92,54 +174,206 @@ abstract class CameraServiceInterface {
 }
 
 class GoProService extends ChangeNotifier implements CameraServiceInterface {
+  GoProService() {
+    capture.addListener(notifyListeners);
+  }
+  @visibleForTesting
+  GoProService.testConnection(String id, GoProProtocol protocol) {
+    capture.addListener(notifyListeners);
+    _protocols[id] = protocol;
+    _devices.add(CameraDevice(id: id, name: 'Test camera', isConnected: true));
+  }
+  final Map<String, String> _serials = {};
+  final Map<String, String> _models = {};
+  String modelFor(String id) => _models[id] ?? 'Unknown model';
+  final Map<String, void Function(String)> _settingProgress = {};
+  StreamSubscription? _scanSubscription;
+
+  Future<void> _readHardware(String id) async {
+    final payload = await _protocol(id).exchange('command', [0x3C]);
+    var offset = 2;
+    final fields = <List<int>>[];
+    for (var i = 0; i < 5; i++) {
+      if (offset >= payload.length) {
+        throw const FormatException('Missing hardware info');
+      }
+      final length = payload[offset++];
+      if (offset + length > payload.length) {
+        throw const FormatException('Truncated hardware info');
+      }
+      fields.add(payload.sublist(offset, offset + length));
+      offset += length;
+    }
+    final model = utf8.decode(fields[1]);
+    _models[id] = model;
+    _serials[id] = utf8.decode(fields[4]);
+  }
+
+  Future<bool> _associateIp(String ip) async {
+    for (final device in _devices.where((d) => d.wifiIpAddress == ip)) {
+      device.wifiIpAddress = null;
+      device.isWifiConnected = false;
+    }
+    try {
+      final result = await http
+          .get(Uri.parse('http://$ip:8080/gopro/camera/info'))
+          .timeout(const Duration(seconds: 2));
+      if (result.statusCode != 200) return false;
+      final data = jsonDecode(result.body) as Map<String, dynamic>;
+      final serial = data['serial_number']?.toString();
+      if (serial == null || serial.isEmpty) return false;
+      final index = _devices.indexWhere(
+        (d) => d.isConnected && _serials[d.id] == serial,
+      );
+      if (index < 0) return false;
+      _devices[index] = _devices[index].copyWith(
+        isWifiConnected: true,
+        wifiIpAddress: ip,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  final CaptureCoordinator capture = CaptureCoordinator();
+  final Map<String, GoProProtocol> _protocols = {};
+  final Map<String, List<StreamSubscription>> _subscriptions = {};
+  final Map<String, int> _expectedModes = {};
+  final Map<String, Map<int, int>> _verified = {};
+
+  Future<void> prepareCapture(String mode, Map<String, String> settings) async {
+    if (_isSyncingMedia) throw StateError('Finish importing before capture');
+    await stopAllPreviews();
+    await capture.prepare(
+      devices
+          .where((d) => d.isConnected)
+          .map((d) => _GoProRigCamera(this, d.id))
+          .toList(),
+      mode,
+      settings,
+    );
+  }
+
+  GoProProtocol _protocol(String id) =>
+      _protocols[id] ??
+      (throw StateError('Camera $id is disconnected; reconnect it'));
+
+  Future<Map<int, List<int>>> _query(
+    String id,
+    int query,
+    List<int> ids,
+  ) async => decodeTlv(await _protocol(id).exchange('query', [query, ...ids]));
+
+  Future<int> _status(String id, int key) async {
+    final values = await _query(id, 0x13, [key]);
+    if (values[key]?.isNotEmpty != true) {
+      throw StateError('Missing status $key from $id');
+    }
+    return bigEndian(values[key]!);
+  }
+
+  Future<void> _waitIdle(String id) async {
+    final deadline = Stopwatch()..start();
+    while (deadline.elapsed < const Duration(seconds: 30)) {
+      final values = await _query(id, 0x13, [8, 10]);
+      if (values[8]?.isNotEmpty != true || values[10]?.isNotEmpty != true) {
+        throw StateError('Camera $id did not report busy/encoding status');
+      }
+      if (bigEndian(values[8]!) == 0 && bigEndian(values[10]!) == 0) return;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
+    throw TimeoutException('Camera $id is still processing after 30 seconds');
+  }
+
+  Future<void> _verifyReady(String id) async {
+    if (_previewCameraId != null || _previewTransition) {
+      throw StateError('Stop preview before capturing.');
+    }
+    await _waitIdle(id);
+    if (await _status(id, 89) != _expectedModes[id]) {
+      throw StateError('Camera $id changed mode; synchronize again');
+    }
+    final expected = _verified[id] ?? {};
+    if (expected.isNotEmpty) {
+      final actual = await _query(id, 0x12, expected.keys.toList());
+      for (final entry in expected.entries) {
+        if (actual[entry.key] == null ||
+            bigEndian(actual[entry.key]!) != entry.value) {
+          throw StateError(
+            'Camera $id changed setting ${entry.key}; synchronize again',
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _configure(
+    String id,
+    String mode,
+    Map<String, String> settings,
+    void Function(String) progress,
+  ) async {
+    // Validate unsupported controls before mutating any camera.
+    _validateSettings(settings);
+    _verified.remove(id);
+    _settingProgress[id] = progress;
+    try {
+      final index = _devices.indexWhere((d) => d.id == id);
+      if (index >= 0) {
+        _devices[index] = _devices[index].copyWith(currentSettings: {});
+      }
+      progress('Stopping and selecting $mode preset');
+      await _selectMode(id, mode == 'video' ? 12 : 16);
+      progress('Applying and reading back settings');
+      await applySettingsToDevice(id, settings, captureMode: mode);
+      await _verifyReady(id);
+      updateCameraSettings(id, settings);
+      progress('Verified');
+    } finally {
+      _settingProgress.remove(id);
+    }
+  }
+
+  void _validateSettings(Map<String, String> settings) {
+    for (final key in ['ISO Max', 'Shutter', 'White Balance']) {
+      if (settings[key] != null && settings[key] != 'Camera preset') {
+        throw UnsupportedError(
+          '$key cannot be verified with the published Open GoPro API. '
+          'Set it on every camera (or via GoPro Labs QR) and select Camera preset.',
+        );
+      }
+    }
+  }
+
   final List<CameraDevice> _devices = [];
   final Map<String, BluetoothDevice> _bleDevices = {};
   final Map<String, Map<String, BluetoothCharacteristic>> _charCache = {};
   bool _isScanning = false;
 
-  // Custom names mapping
-  Map<String, String> _customNames = {};
+  // Media sync state
+  bool _isSyncingMedia = false;
+  bool _cancelImport = false;
+  final List<String> galleryFailures = [];
+  void cancelImport() {
+    _cancelImport = true;
+  }
+
+  double _syncProgress = 0.0;
+  String _syncStatusMessage = '';
 
   // Keep-alive and polling timers per device
   final Map<String, Timer> _keepAliveTimers = {};
   final Map<String, Timer> _batteryPollTimers = {};
 
-  GoProService() {
-    _loadCustomNames();
-  }
-
-  Future<void> _loadCustomNames() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final jsonStr = prefs.getString('gopro_custom_names');
-      if (jsonStr != null) {
-        _customNames = Map<String, String>.from(jsonDecode(jsonStr));
-      }
-    } catch (e) {
-      debugPrint("Error loading custom names: $e");
-    }
-  }
-
-  Future<void> renameCamera(String id, String newName) async {
-    _customNames[id] = newName;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('gopro_custom_names', jsonEncode(_customNames));
-    } catch (e) {
-      debugPrint("Error saving custom names: $e");
-    }
-    
-    final index = _devices.indexWhere((d) => d.id == id);
-    if (index != -1) {
-      _devices[index] = _devices[index].copyWith(customName: newName);
-      notifyListeners();
-    }
-  }
-
   @override
   List<CameraDevice> get devices => _devices;
   @override
   bool get isScanning => _isScanning;
+
+  bool get isSyncingMedia => _isSyncingMedia;
+  double get syncProgress => _syncProgress;
+  String get syncStatusMessage => _syncStatusMessage;
 
   bool get _isMobilePlatform {
     if (kIsWeb) return false;
@@ -150,53 +384,29 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     }
   }
 
-  /// Platform-aware permission request.
-  /// iOS: Only Bluetooth permission needed (system prompts automatically).
-  /// Android: Needs Bluetooth Scan, Bluetooth Connect, and Location.
   Future<bool> _requestPermissions() async {
-    if (isAndroid) {
-      final scanGranted = await Permission.bluetoothScan.request().isGranted;
-      final connectGranted = await Permission.bluetoothConnect.request().isGranted;
-      final locationGranted = await Permission.location.request().isGranted;
-      if (!scanGranted || !connectGranted || !locationGranted) {
-        debugPrint('Android BLE permissions denied: scan=$scanGranted, connect=$connectGranted, location=$locationGranted');
-        return false;
+    if (Platform.isAndroid) {
+      if (await Permission.bluetoothScan.request().isGranted &&
+          await Permission.bluetoothConnect.request().isGranted &&
+          await Permission.location.request().isGranted) {
+        return true;
       }
-      return true;
-    } else if (isIOS) {
-      // On iOS, Bluetooth permission is requested automatically by the system
-      // the first time FlutterBluePlus.startScan() is called.
-      // We just need to make sure Bluetooth is turned on.
-      final adapterState = await FlutterBluePlus.adapterState.first;
-      if (adapterState != BluetoothAdapterState.on) {
-        debugPrint('iOS: Bluetooth is not turned on (state: $adapterState)');
-        return false;
-      }
+      return false;
+    } else if (Platform.isIOS) {
       return true;
     }
     return false;
-  }
-
-  /// Human-readable explanation of why scanning failed, per platform.
-  String get scanFailureReason {
-    if (isIOS) {
-      return 'Make sure Bluetooth is turned on in Settings → Bluetooth.';
-    } else if (isAndroid) {
-      return 'Make sure Bluetooth and Location / GPS are turned on. Android requires Location for Bluetooth scanning.';
-    }
-    return 'Bluetooth scanning is not supported on this platform.';
   }
 
   // ─── SCANNING ──────────────────────────────────────────────
 
   @override
   void startScan() async {
-    if (_isScanning) return;
+    if (_isScanning || capture.busy || capture.active) return;
 
     _isScanning = true;
-    _devices.clear();
-    _bleDevices.clear();
-    _charCache.clear();
+    // Preserve connected peripherals and their notification subscriptions.
+    _devices.removeWhere((d) => !d.isConnected);
     notifyListeners();
 
     if (_isMobilePlatform) {
@@ -210,24 +420,28 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       try {
         await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
 
-        FlutterBluePlus.scanResults.listen((results) {
+        await _scanSubscription?.cancel();
+        _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
           for (var r in results) {
             final deviceName = r.device.platformName.isNotEmpty
                 ? r.device.platformName
                 : r.advertisementData.advName;
             if (deviceName.isNotEmpty) {
-              final existing = _devices.any((d) => d.id == r.device.remoteId.str);
+              final existing = _devices.any(
+                (d) => d.id == r.device.remoteId.str,
+              );
               if (!existing) {
                 _bleDevices[r.device.remoteId.str] = r.device;
-                _devices.add(CameraDevice(
-                  id: r.device.remoteId.str,
-                  name: deviceName,
-                  customName: _customNames[r.device.remoteId.str],
-                  isConnected: false,
-                  batteryLevel: 0,
-                  storageRemaining: 'Unknown',
-                  isRecording: false,
-                ));
+                _devices.add(
+                  CameraDevice(
+                    id: r.device.remoteId.str,
+                    name: deviceName,
+                    isConnected: false,
+                    batteryLevel: 0,
+                    storageRemaining: 'Unknown',
+                    isRecording: false,
+                  ),
+                );
               }
             }
           }
@@ -265,50 +479,107 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       if (device != null) {
         await device.connect(license: License.free);
 
-        final index = _devices.indexWhere((d) => d.id == id);
-        if (index != -1) {
-          _devices[index] = _devices[index].copyWith(isConnected: true);
-          notifyListeners();
-        }
+        // Request larger MTU on Android for Wi-Fi provisioning credentials
+        try {
+          if (Platform.isAndroid) {
+            await device.requestMtu(512);
+          }
+        } catch (_) {}
 
         // Discover services and cache characteristics
         List<BluetoothService> services = await device.discoverServices();
         final chars = <String, BluetoothCharacteristic>{};
 
         for (var service in services) {
+          for (final c in service.characteristics) {
+            if (c.characteristicUuid == GoProUuids.wifiSsid) {
+              chars['wifiSsid'] = c;
+            }
+            if (c.characteristicUuid == GoProUuids.wifiPassword) {
+              chars['wifiPassword'] = c;
+            }
+          }
           if (service.serviceUuid == GoProUuids.service) {
             for (var c in service.characteristics) {
-              if (c.characteristicUuid == GoProUuids.commandReq) chars['commandReq'] = c;
-              if (c.characteristicUuid == GoProUuids.commandResp) chars['commandResp'] = c;
-              if (c.characteristicUuid == GoProUuids.settingReq) chars['settingReq'] = c;
-              if (c.characteristicUuid == GoProUuids.settingResp) chars['settingResp'] = c;
-              if (c.characteristicUuid == GoProUuids.queryReq) chars['queryReq'] = c;
-              if (c.characteristicUuid == GoProUuids.queryResp) chars['queryResp'] = c;
+              if (c.characteristicUuid == GoProUuids.commandReq) {
+                chars['commandReq'] = c;
+              }
+              if (c.characteristicUuid == GoProUuids.commandResp) {
+                chars['commandResp'] = c;
+              }
+              if (c.characteristicUuid == GoProUuids.settingReq) {
+                chars['settingReq'] = c;
+              }
+              if (c.characteristicUuid == GoProUuids.settingResp) {
+                chars['settingResp'] = c;
+              }
+              if (c.characteristicUuid == GoProUuids.queryReq) {
+                chars['queryReq'] = c;
+              }
+              if (c.characteristicUuid == GoProUuids.queryResp) {
+                chars['queryResp'] = c;
+              }
             }
           }
         }
 
         _charCache[id] = chars;
 
-        // Subscribe to notifications
-        if (chars['commandResp'] != null) {
-          await chars['commandResp']!.setNotifyValue(true);
-          chars['commandResp']!.onValueReceived.listen((value) {
-            debugPrint("GoPro [$id] CMD Response: $value");
-          });
+        if (![
+          'commandReq',
+          'commandResp',
+          'settingReq',
+          'settingResp',
+          'queryReq',
+          'queryResp',
+        ].every(chars.containsKey)) {
+          throw StateError('Device does not expose Open GoPro BLE');
         }
-        if (chars['queryResp'] != null) {
-          await chars['queryResp']!.setNotifyValue(true);
-          chars['queryResp']!.onValueReceived.listen((value) {
-            _handleQueryResponse(id, value);
-          });
+        for (final subscription
+            in _subscriptions.remove(id) ?? <StreamSubscription>[]) {
+          await subscription.cancel();
         }
-        if (chars['settingResp'] != null) {
-          await chars['settingResp']!.setNotifyValue(true);
-          chars['settingResp']!.onValueReceived.listen((value) {
-            debugPrint("GoPro [$id] Setting Response: $value");
-          });
+        _protocols.remove(id)?.close(StateError('Reconnecting'));
+        final protocol = GoProProtocol(
+          (channel, packet) =>
+              chars['${channel}Req']!.write(packet, withoutResponse: false),
+        );
+        _protocols[id] = protocol;
+        final subscriptions = <StreamSubscription>[];
+        _subscriptions[id] = subscriptions;
+        for (final channel in ['command', 'query', 'setting']) {
+          final response = chars['${channel}Resp']!;
+          subscriptions.add(
+            response.onValueReceived.listen(
+              (value) => protocol.receive(channel, value),
+            ),
+          );
+          await response.setNotifyValue(true);
         }
+        subscriptions.add(
+          device.connectionState.listen((state) {
+            if (state == BluetoothConnectionState.disconnected) {
+              protocol.close(StateError('Camera $id disconnected'));
+              _protocols.remove(id);
+              _expectedModes.remove(id);
+              _verified.remove(id);
+              _keepAliveTimers.remove(id)?.cancel();
+              _batteryPollTimers.remove(id)?.cancel();
+              final i = _devices.indexWhere((d) => d.id == id);
+              if (i >= 0) {
+                _devices[i] = _devices[i].copyWith(isConnected: false);
+              }
+              notifyListeners();
+            }
+          }),
+        );
+        await protocol.exchange('command', [0x50]);
+        await _readHardware(id);
+        final index = _devices.indexWhere((d) => d.id == id);
+        if (index >= 0) {
+          _devices[index] = _devices[index].copyWith(isConnected: true);
+        }
+        notifyListeners();
 
         // Register for push status updates (battery + storage)
         await _registerStatusNotifications(id);
@@ -323,116 +594,67 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
         _startBatteryPolling(id);
       }
     } catch (e) {
+      await disconnectDevice(id);
       debugPrint("Connection Error: $e");
+      rethrow;
     }
   }
 
-  /// Register for push-based status notifications
   Future<void> _registerStatusNotifications(String id) async {
-    final chars = _charCache[id];
-    if (chars == null || chars['queryReq'] == null) return;
-    try {
-      // Register for status value updates (Query ID 0x53)
-      // Status 70 (0x46) = battery %, Status 54 (0x36) = SD remaining KB
-      await chars['queryReq']!.write(
-        [0x04, 0x53, 0x46, 0x36, 0x08],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
-    } catch (e) {
-      debugPrint("Register status notifications error: $e");
-    }
+    await _protocol(id).exchange('query', [0x53, 70, 54]);
   }
 
-  /// Query battery level and storage
   Future<void> queryBatteryAndStorage(String id) async {
-    final chars = _charCache[id];
-    if (chars == null || chars['queryReq'] == null) return;
+    if (capture.busy || capture.active) return;
     try {
-      // Get Status Values: 70 (battery %), 54 (SD remaining KB), 8 (busy)
-      await chars['queryReq']!.write(
-        [0x04, 0x13, 0x46, 0x36, 0x08],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
-    } catch (e) {
-      debugPrint("Battery query error: $e");
-    }
-  }
-
-  /// Send BLE keep-alive to prevent disconnection
-  void _startKeepAlive(String id) {
-    _keepAliveTimers[id]?.cancel();
-    _keepAliveTimers[id] = Timer.periodic(const Duration(seconds: 28), (_) async {
-      final chars = _charCache[id];
-      if (chars == null || chars['commandReq'] == null) return;
-      try {
-        // Keep Alive command
-        await chars['commandReq']!.write([0x01, 0x5B], withoutResponse: false).timeout(const Duration(seconds: 2));
-      } catch (e) {
-        debugPrint("Keep-alive error for $id: $e");
-      }
-    });
-  }
-
-  /// Poll battery every 30s
-  void _startBatteryPolling(String id) {
-    _batteryPollTimers[id]?.cancel();
-    _batteryPollTimers[id] = Timer.periodic(const Duration(seconds: 30), (_) {
-      queryBatteryAndStorage(id);
-    });
-  }
-
-  /// Parse TLV status response - FIXED: skip 3 header bytes
-  void _handleQueryResponse(String deviceId, List<int> value) {
-    if (value.length < 4) return;
-    try {
-      // Response format: [totalLen, queryId, resultCode, ...TLV entries]
-      // Skip first 3 bytes: totalLen + queryId + result
-      int i = 3;
-      while (i < value.length - 1) {
-        int statusId = value[i];
-        int statusLen = value[i + 1];
-        if (i + 2 + statusLen > value.length) break;
-
-        final devIndex = _devices.indexWhere((d) => d.id == deviceId);
-        if (devIndex == -1) { i += 2 + statusLen; continue; }
-
-        if (statusId == 0x46 && statusLen >= 1) {
-          // Status 70: Battery percentage (0-100)
-          int battery = value[i + 2];
-          if (battery >= 0 && battery <= 100) {
-            _devices[devIndex] = _devices[devIndex].copyWith(batteryLevel: battery);
-            debugPrint("GoPro [$deviceId] Battery: $battery%");
-          }
-        } else if (statusId == 0x36 && statusLen >= 4) {
-          // Status 54: SD card remaining space in KB (4-byte big-endian int)
-          int kb = (value[i + 2] << 24) | (value[i + 3] << 16) |
-                   (value[i + 4] << 8)  | value[i + 5];
-          String storage;
-          if (kb > 1048576) {
-            storage = '${(kb / 1048576).toStringAsFixed(1)} GB';
-          } else if (kb > 1024) {
-            storage = '${(kb / 1024).toStringAsFixed(0)} MB';
-          } else {
-            storage = '$kb KB';
-          }
-          _devices[devIndex] = _devices[devIndex].copyWith(storageRemaining: storage);
-          debugPrint("GoPro [$deviceId] Storage: $storage");
-        } else if (statusId == 0x08 && statusLen >= 1) {
-          // Status 8: Is camera busy/encoding
-          bool busy = value[i + 2] != 0;
-          debugPrint("GoPro [$deviceId] Busy: $busy");
-        }
-
-        i += 2 + statusLen;
-      }
+      final values = await _query(id, 0x13, [70, 54]);
+      final index = _devices.indexWhere((d) => d.id == id);
+      if (index < 0) return;
+      final battery = values[70] == null ? null : bigEndian(values[70]!);
+      final kb = values[54] == null ? null : bigEndian(values[54]!);
+      _devices[index] = _devices[index].copyWith(
+        batteryLevel: battery,
+        storageRemaining: kb == null
+            ? null
+            : '${(kb / 1048576).toStringAsFixed(1)} GB',
+      );
       notifyListeners();
     } catch (e) {
-      debugPrint("Query parse error: $e");
+      debugPrint('Status query failed: $e');
     }
+  }
+
+  void _startKeepAlive(String id) {
+    _keepAliveTimers[id]?.cancel();
+    _keepAliveTimers[id] = Timer.periodic(const Duration(seconds: 3), (
+      _,
+    ) async {
+      if (capture.busy && capture.phase != CapturePhase.synchronizing) return;
+      try {
+        await _protocol(id).exchange('setting', [91, 1, 66]);
+      } catch (e) {
+        debugPrint('Keep alive failed: $e');
+      }
+    });
+  }
+
+  void _startBatteryPolling(String id) {
+    _batteryPollTimers[id]?.cancel();
+    _batteryPollTimers[id] = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => queryBatteryAndStorage(id),
+    );
   }
 
   /// Disconnect a device cleanly
   Future<void> disconnectDevice(String id) async {
+    _protocols.remove(id)?.close(StateError('Disconnected'));
+    _verified.remove(id);
+    _expectedModes.remove(id);
+    for (final subscription
+        in _subscriptions.remove(id) ?? <StreamSubscription>[]) {
+      await subscription.cancel();
+    }
     _keepAliveTimers[id]?.cancel();
     _keepAliveTimers.remove(id);
     _batteryPollTimers[id]?.cancel();
@@ -448,7 +670,10 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
 
     final index = _devices.indexWhere((d) => d.id == id);
     if (index != -1) {
-      _devices[index] = _devices[index].copyWith(isConnected: false, batteryLevel: 0);
+      _devices[index] = _devices[index].copyWith(
+        isConnected: false,
+        batteryLevel: 0,
+      );
     }
     _charCache.remove(id);
     notifyListeners();
@@ -456,166 +681,970 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
 
   // ─── MODE SWITCHING ────────────────────────────────────────
 
+  Future<void> requestExternalControl(String id) async {
+    final response = await _protocol(id).exchange(
+      'command',
+      [0xF1, 0x69, 8, 2],
+      protobuf: true,
+      responseAction: 0xE9,
+    );
+    if (decodeProto(response.sublist(2))[1]?.first != 1) {
+      throw StateError('Camera $id denied external control');
+    }
+  }
+
   Future<void> setPresetGroup(String id, int groupId) async {
-    final chars = _charCache[id];
-    if (chars == null || chars['commandReq'] == null) return;
-    try {
-      final highByte = (groupId >> 8) & 0xFF;
-      final lowByte = groupId & 0xFF;
-      await chars['commandReq']!.write(
-        [0x04, 0x3E, 0x02, highByte, lowByte],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
-      debugPrint("GoPro [$id] Set Preset Group: $groupId");
-    } catch (e) {
-      debugPrint("Set Preset Group error: $e");
+    await _protocol(
+      id,
+    ).exchange('command', [0x3E, 2, (groupId >> 8) & 255, groupId & 255]);
+    await _waitIdle(id);
+    if (await _status(id, 96) != groupId) {
+      throw StateError('Preset group did not settle on $id');
     }
   }
 
-  Future<void> setPhotoMode(String id) async =>
-      setPresetGroup(id, GoProSettings.presetGroupPhoto);
+  Future<void> _selectMode(String id, int mode) async {
+    await stopShutter(id);
+    await requestExternalControl(id);
+    // Discover preset IDs on this camera/firmware. Never use a guessed preset ID.
+    final response = await _protocol(id).exchange(
+      'query',
+      [0xF5, 0x72, 24, 1, 32, 1],
+      protobuf: true,
+      responseAction: 0xF2,
+    );
+    final matching = decodePresets(
+      response.sublist(2),
+    ).where((p) => p.mode == mode).toList();
+    if (matching.isEmpty) {
+      throw UnsupportedError(
+        'Camera $id has no available preset for mode $mode; enable Pro controls on camera',
+      );
+    }
+    await setPresetGroup(id, matching.first.group);
+    final activePreset = await _status(id, 97);
+    final preset =
+        matching.where((p) => p.id == activePreset).firstOrNull ??
+        matching.first;
+    await _protocol(id).exchange('command', [
+      0x40,
+      4,
+      (preset.id >> 24) & 255,
+      (preset.id >> 16) & 255,
+      (preset.id >> 8) & 255,
+      preset.id & 255,
+    ]);
+    await _waitIdle(id);
+    if (await _status(id, 89) != mode || await _status(id, 97) != preset.id) {
+      throw StateError('Camera $id did not enter the requested preset');
+    }
+    _expectedModes[id] = mode;
+    _verified[id] = {};
+  }
 
-  Future<void> setVideoMode(String id) async =>
-      setPresetGroup(id, GoProSettings.presetGroupVideo);
+  Future<void> setFlatMode(String id, int modeVal) => _selectMode(id, modeVal);
+  Future<void> setPhotoFormat(String id, String format) async {
+    final value = GoProSettings.photoOutput[format];
+    if (value == null) {
+      throw UnsupportedError('Unsupported single photo format: $format');
+    }
+    await _writeSetting(id, 125, value);
+  }
 
-  Future<void> setTimeLapseMode(String id) async =>
-      setPresetGroup(id, GoProSettings.presetGroupTimelapse);
+  Future<void> setPhotoMode(
+    String id, {
+    String photoFormat = 'SuperPhoto',
+  }) async {
+    await _selectMode(id, 16);
+    await setPhotoFormat(id, photoFormat);
+  }
 
-  Future<void> setAllCamerasMode(String mode) async {
-    final groupId = mode == 'video'
-        ? GoProSettings.presetGroupVideo
-        : mode == 'timelapse'
-            ? GoProSettings.presetGroupTimelapse
-            : GoProSettings.presetGroupPhoto;
-
-    for (final cam in _devices.where((d) => d.isConnected)) {
-      await setPresetGroup(cam.id, groupId);
-      await Future.delayed(const Duration(milliseconds: 200));
+  Future<void> setVideoMode(String id) => _selectMode(id, 12);
+  Future<void> setTimeLapseMode(String id) => _selectMode(id, 20);
+  Future<void> setAllCamerasMode(
+    String mode, {
+    String photoFormat = 'SuperPhoto',
+  }) async {
+    if (capture.active || capture.busy) throw StateError('Capture is busy');
+    for (final cam in _devices.where((d) => d.isConnected).toList()) {
+      if (mode == 'video') {
+        await setVideoMode(cam.id);
+      } else if (mode == 'timelapse') {
+        await setTimeLapseMode(cam.id);
+      } else {
+        await setPhotoMode(cam.id, photoFormat: photoFormat);
+      }
     }
   }
 
-  // ─── SETTINGS ──────────────────────────────────────────────
+  Future<List<int>> _capabilities(String id, int setting) async {
+    final result = await _query(id, 0x32, [setting]);
+    return result[setting] ?? [];
+  }
 
   Future<void> _writeSetting(String id, int settingId, int value) async {
-    final chars = _charCache[id];
-    if (chars == null || chars['settingReq'] == null) return;
-    try {
-      await chars['settingReq']!.write(
-        [0x03, settingId, 0x01, value],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
-      debugPrint("GoPro [$id] Set setting $settingId = $value");
-      await Future.delayed(const Duration(milliseconds: 150));
-    } catch (e) {
-      debugPrint("Set setting error ($settingId): $e");
+    const labels = <int, String>{
+      2: 'Resolution',
+      3: 'Frame rate',
+      121: 'Video lens',
+      122: 'Photo lens',
+      125: 'Photo output',
+      171: 'Photo interval',
+      172: 'Interval duration',
+      97: 'Photo timer',
+      177: 'Night photo',
+      182: 'Bitrate',
+      156: 'Video duration',
+      167: 'HindSight',
+      168: 'Scheduled capture',
+    };
+    _settingProgress[id]?.call(
+      'Applying ${labels[settingId] ?? 'camera option'}; awaiting confirmation',
+    );
+    await _waitIdle(id);
+    if (!(await _capabilities(id, settingId)).contains(value)) {
+      throw UnsupportedError(
+        'Camera $id does not support setting $settingId=$value in this preset',
+      );
     }
+    await _protocol(id).exchange('setting', [settingId, 1, value]);
+    await _waitIdle(id);
+    final readback = await _query(id, 0x12, [settingId]);
+    if (readback[settingId] == null ||
+        bigEndian(readback[settingId]!) != value) {
+      throw StateError('Camera $id did not confirm setting $settingId=$value');
+    }
+    (_verified[id] ??= {})[settingId] = value;
+  }
+
+  // ─── HOTSPOT / TETHERING & MEDIA TRANSFER ─────────────────
+
+  Future<({String ssid, String password})> readWifiCredentials(
+    String id,
+  ) async {
+    if (capture.active || capture.busy) throw StateError('Stop capture first');
+    final chars = _charCache[id];
+    if (chars?['wifiSsid'] == null || chars?['wifiPassword'] == null) {
+      throw StateError('Reconnect this GoPro to read its Wi-Fi credentials');
+    }
+    String decode(List<int> bytes) =>
+        utf8.decode(bytes).replaceAll('\u0000', '').trim();
+    final ssid = decode(await chars!['wifiSsid']!.read());
+    final password = decode(await chars['wifiPassword']!.read());
+    if (ssid.isEmpty || password.length < 8) {
+      throw StateError('Invalid camera Wi-Fi credentials');
+    }
+    return (ssid: ssid, password: password);
+  }
+
+  Future<void> joinCameraWifi(String id) async {
+    final credentials = await readWifiCredentials(id);
+    await stopAllPreviews();
+    await _protocol(id).exchange('command', [0x17, 1, 1]);
+    var apReady = false;
+    for (var i = 0; i < 15; i++) {
+      if (await _status(id, 69) == 1) {
+        apReady = true;
+        break;
+      }
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+    if (!apReady) throw StateError('Camera Wi-Fi did not become ready');
+    await SystemSettingsService.joinCameraWifi(
+      credentials.ssid,
+      credentials.password,
+    );
+    for (var attempt = 0; attempt < 15; attempt++) {
+      // Every direct AP has the same IP. Match its serial before trusting it.
+      for (var i = 0; i < _devices.length; i++) {
+        _devices[i].wifiIpAddress = null;
+        _devices[i].isWifiConnected = false;
+      }
+      if (await _associateIp('10.5.5.9') &&
+          _devices.any((c) => c.id == id && c.isWifiConnected)) {
+        notifyListeners();
+        return;
+      }
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+    throw StateError(
+      'Wi-Fi joined, but the selected camera identity could not be verified',
+    );
+  }
+
+  Future<ImportReport> importAllConnectedCameras(
+    String destination, {
+    bool saveToGallery = false,
+    void Function(String)? onStatus,
+  }) async {
+    if (_isSyncingMedia || capture.active || capture.busy) {
+      throw StateError('Stop capture and other transfers first');
+    }
+    final cameras = _devices
+        .where((c) => c.isConnected)
+        .toList(growable: false);
+    if (cameras.isEmpty) {
+      throw StateError('Connect GoPros over Bluetooth first');
+    }
+    _isSyncingMedia = true;
+    _cancelImport = false;
+    galleryFailures.clear();
+    notifyListeners();
+    final results = <CameraImportResult>[];
+    try {
+      for (var i = 0; i < cameras.length; i++) {
+        final camera = cameras[i];
+        if (_cancelImport) {
+          results.add(
+            CameraImportResult(
+              camera.id,
+              camera.name,
+              error: 'Import cancelled',
+            ),
+          );
+          continue;
+        }
+        var found = 0;
+        try {
+          onStatus?.call(
+            '${i + 1}/${cameras.length}: joining ${camera.name}. Approve the phone Wi-Fi prompt.',
+          );
+          await joinCameraWifi(camera.id);
+          final items = await fetchAllMediaItemsFromAllCameras(
+            cameraId: camera.id,
+          );
+          found = items.length;
+          final count = await transferMediaItems(
+            items,
+            targetCapturesDirectory: destination,
+            saveToNativeGallery: saveToGallery,
+            onProgress: (n, total, fraction, message) {
+              _syncProgress =
+                  (i + (total == 0 ? 1 : (n - 1 + fraction) / total)) /
+                  cameras.length;
+              onStatus?.call('${camera.name}: $message ($n/$total)');
+              notifyListeners();
+            },
+          );
+          results.add(
+            CameraImportResult(
+              camera.id,
+              camera.name,
+              found: found,
+              imported: count,
+              error: count == found
+                  ? null
+                  : '${found - count} files need retry',
+            ),
+          );
+        } catch (e) {
+          results.add(
+            CameraImportResult(
+              camera.id,
+              camera.name,
+              found: found,
+              error: '$e',
+            ),
+          );
+        } finally {
+          try {
+            await SystemSettingsService.releaseCameraWifi();
+          } catch (_) {}
+        }
+      }
+    } finally {
+      _isSyncingMedia = false;
+      notifyListeners();
+    }
+    return ImportReport(results, destination);
+  }
+
+  /// 0x17 controls the CAMERA access point; it does not provision a phone AP.
+  Future<void> connectToHotspot(String id, String ssid, String password) async {
+    throw UnsupportedError(
+      'Automatic hotspot provisioning requires the model-specific '
+      'COHN/network protobuf flow. Join the camera Wi-Fi for media transfer. '
+      'No credentials were sent.',
+    );
+  }
+
+  /// Connect all connected GoPros to the phone's Hotspot simultaneously
+  Future<void> connectAllToHotspot(String ssid, String password) async {
+    for (final cam in _devices.where((d) => d.isConnected)) {
+      await connectToHotspot(cam.id, ssid, password);
+      await Future.delayed(const Duration(milliseconds: 400));
+    }
+  }
+
+  /// Discovers IP addresses of GoPros connected to the phone's hotspot subnet or direct AP.
+  /// Automatically inspects active network interfaces to find the real subnet.
+  Future<List<String>> discoverGoProIps({List<String>? targetSubnets}) async {
+    final List<String> subnets = [];
+
+    // Auto-detect local active subnets from device network interfaces
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLoopback: false,
+        type: InternetAddressType.IPv4,
+      );
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          final parts = addr.address.split('.');
+          if (parts.length == 4) {
+            final detectedSubnet = '${parts[0]}.${parts[1]}.${parts[2]}';
+            if (!subnets.contains(detectedSubnet) &&
+                detectedSubnet != '127.0.0') {
+              subnets.add(detectedSubnet);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("NetworkInterface discovery notice: $e");
+    }
+
+    // Add fallback subnets
+    final fallbackList = targetSubnets ?? <String>[];
+    if (targetSubnets == null) subnets.clear();
+    for (final s in fallbackList) {
+      if (!subnets.contains(s)) subnets.add(s);
+    }
+
+    final List<String> discovered = [];
+    _syncStatusMessage = 'Scanning network for connected GoPros...';
+    notifyListeners();
+
+    // 1. Quick check direct GoPro AP mode at 10.5.5.9
+    try {
+      final uri = Uri.parse('http://10.5.5.9:8080/gopro/camera/state');
+      final res = await http
+          .get(uri)
+          .timeout(const Duration(milliseconds: 700));
+      if (res.statusCode == 200) {
+        discovered.add('10.5.5.9');
+        debugPrint('Found GoPro at Direct AP IP: 10.5.5.9');
+        await _associateIp('10.5.5.9');
+      }
+    } catch (_) {}
+
+    // 2. Scan subnets concurrently
+    for (final subnet in subnets) {
+      final futures = <Future<void>>[];
+      for (int i = 2; i <= 254; i++) {
+        final ip = '$subnet.$i';
+        futures.add(() async {
+          try {
+            final uri = Uri.parse('http://$ip:8080/gopro/camera/state');
+            final response = await http
+                .get(uri)
+                .timeout(const Duration(milliseconds: 650));
+            if (response.statusCode == 200) {
+              discovered.add(ip);
+              debugPrint('Found GoPro at IP: $ip');
+
+              await _associateIp(ip);
+            }
+          } catch (_) {}
+        }());
+
+        if (futures.length >= 35) {
+          await Future.wait(futures);
+          futures.clear();
+          if (discovered.length >=
+                  _devices.where((d) => d.isConnected).length &&
+              _devices.isNotEmpty) {
+            break;
+          }
+        }
+      }
+      if (futures.isNotEmpty) await Future.wait(futures);
+      if (discovered.isNotEmpty) break;
+    }
+
+    notifyListeners();
+    return discovered;
+  }
+
+  /// Fetch list of all media on a GoPro SD card over HTTP
+  Future<Map<String, dynamic>?> fetchMediaList(String ip) async {
+    try {
+      final uri = Uri.parse('http://$ip:8080/gopro/media/list');
+      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('Error fetching media list from $ip: $e');
+    }
+    return null;
+  }
+
+  /// Get the most recently captured photo or video file details
+  Future<Map<String, String>?> getLastCapturedMedia(String ip) async {
+    final mediaList = await fetchMediaList(ip);
+    if (mediaList == null || !mediaList.containsKey('media')) return null;
+
+    final mediaDirs = mediaList['media'] as List<dynamic>?;
+    if (mediaDirs == null || mediaDirs.isEmpty) return null;
+
+    final lastDir = mediaDirs.last as Map<String, dynamic>;
+    final dirName = lastDir['d'] as String? ?? '100GOPRO';
+    final files = lastDir['fs'] as List<dynamic>?;
+    if (files == null || files.isEmpty) return null;
+
+    final lastFile = files.last as Map<String, dynamic>;
+    final fileName = lastFile['n'] as String;
+
+    return {
+      'directory': dirName,
+      'filename': fileName,
+      'url': 'http://$ip:8080/videos/DCIM/$dirName/$fileName',
+    };
+  }
+
+  String? _previewCameraId;
+  bool _previewTransition = false;
+  String? get previewCameraId => _previewCameraId;
+
+  Future<bool> startLiveStream(String id) async {
+    if (_previewTransition ||
+        capture.active ||
+        capture.busy ||
+        _isSyncingMedia) {
+      throw StateError('Stop capture and transfers before opening preview.');
+    }
+    if (_previewCameraId != null && _previewCameraId != id) {
+      throw StateError(
+        'Close the current preview before choosing another camera.',
+      );
+    }
+    final candidates = _devices.where((d) => d.id == id && d.isConnected);
+    if (candidates.isEmpty) throw StateError('Camera disconnected');
+    final ip = candidates.first.wifiIpAddress;
+    if (ip == null || ip.isEmpty) {
+      throw StateError('Join this camera’s Wi-Fi, then discover its address.');
+    }
+    _previewTransition = true;
+    _previewCameraId = id; // Retain ownership if the HTTP outcome is uncertain.
+    try {
+      final response = await http
+          .get(Uri.parse('http://$ip:8080/gopro/camera/stream/start?port=8554'))
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode != 200) {
+        throw HttpException('Preview returned HTTP ${response.statusCode}');
+      }
+      return true;
+    } finally {
+      _previewTransition = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> stopLiveStream(String id) async {
+    final candidates = _devices.where((d) => d.id == id);
+    if (candidates.isEmpty || candidates.first.wifiIpAddress == null) {
+      return false;
+    }
+    try {
+      final ip = candidates.first.wifiIpAddress;
+      final response = await http
+          .get(Uri.parse('http://$ip:8080/gopro/camera/stream/stop'))
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode != 200) return false;
+      if (_previewCameraId == id) _previewCameraId = null;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> stopAllPreviews() async {
+    if (_previewTransition) {
+      throw StateError('Wait for the preview connection to finish.');
+    }
+    final id = _previewCameraId;
+    if (id != null && !await stopLiveStream(id)) {
+      throw StateError(
+        'Preview Stop was not confirmed. Reconnect camera Wi-Fi and retry.',
+      );
+    }
+  }
+
+  Future<bool> setLivePreviewMode(
+    String id, {
+    required bool multiStream,
+  }) async => false;
+
+  /// A saved-media thumbnail is not a live preview.
+  Future<String?> getLivePreviewFrameUrl(String id) async {
+    final candidates = _devices.where((d) => d.id == id);
+    if (candidates.isEmpty) return null;
+    final ip = candidates.first.wifiIpAddress;
+    if (ip == null) return null;
+    final media = await getLastCapturedMedia(ip);
+    if (media == null) return null;
+    return Uri.http('$ip:8080', '/gopro/media/thumbnail', {
+      'path': '${media['directory']}/${media['filename']}',
+    }).toString();
+  }
+
+  /// Test GoPro HTTP Connection and measure latency
+  Future<Map<String, dynamic>> testCameraHttpConnection(String ip) async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final uri = Uri.parse('http://$ip:8080/gopro/camera/state');
+      final res = await http
+          .get(uri)
+          .timeout(const Duration(milliseconds: 1500));
+      stopwatch.stop();
+      if (res.statusCode == 200) {
+        return {
+          'success': true,
+          'latencyMs': stopwatch.elapsedMilliseconds,
+          'statusCode': res.statusCode,
+          'data': jsonDecode(res.body),
+        };
+      }
+    } catch (e) {
+      stopwatch.stop();
+      return {
+        'success': false,
+        'latencyMs': stopwatch.elapsedMilliseconds,
+        'error': e.toString(),
+      };
+    }
+    return {'success': false, 'latencyMs': stopwatch.elapsedMilliseconds};
+  }
+
+  /// Download to a partial file; only rename once length and stream complete.
+  Future<bool> downloadMediaFile(
+    String ip,
+    String directory,
+    String filename,
+    String targetFilePath, {
+    Function(double progress)? onProgress,
+    int? expectedBytes,
+  }) async {
+    if (![
+      directory,
+      filename,
+    ].every((s) => RegExp(r'^[A-Za-z0-9_.-]+$').hasMatch(s) && s != '..')) {
+      throw ArgumentError('Invalid camera media path');
+    }
+    final client = http.Client();
+    final partial = File('$targetFilePath.part');
+    IOSink? sink;
+    try {
+      final response = await client
+          .send(
+            http.Request(
+              'GET',
+              Uri.parse('http://$ip:8080/videos/DCIM/$directory/$filename'),
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) {
+        throw HttpException('HTTP ${response.statusCode}');
+      }
+      await partial.parent.create(recursive: true);
+      sink = partial.openWrite();
+      var received = 0;
+      final length = response.contentLength ?? expectedBytes ?? 0;
+      await for (final chunk in response.stream.timeout(
+        const Duration(seconds: 30),
+      )) {
+        if (_cancelImport) throw StateError('Import cancelled');
+        sink.add(chunk);
+        received += chunk.length;
+        if (length > 0) onProgress?.call((received / length).clamp(0, 1));
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      if (received == 0 ||
+          (length > 0 && received != length) ||
+          (expectedBytes != null &&
+              expectedBytes > 0 &&
+              received != expectedBytes)) {
+        throw const FormatException('Incomplete media download');
+      }
+      await partial.rename(targetFilePath);
+      return true;
+    } catch (e) {
+      debugPrint('Download failed ($filename): $e');
+      return false;
+    } finally {
+      await sink?.close();
+      client.close();
+      if (await partial.exists()) await partial.delete();
+    }
+  }
+
+  /// Sync captures from ALL connected GoPros over Hotspot Wi-Fi directly to the project's capture folder
+  Future<int> syncCapturesFromAllCameras(
+    String targetCapturesDirectory, {
+    Function(int current, int total, String status)? onProgress,
+  }) async {
+    if (_isSyncingMedia || capture.active || capture.busy) {
+      throw StateError('Stop capture before transferring media');
+    }
+    _isSyncingMedia = true;
+    _syncProgress = 0;
+    notifyListeners();
+    try {
+      final items = await fetchAllMediaItemsFromAllCameras();
+      final count = await transferMediaItems(
+        items,
+        targetCapturesDirectory: targetCapturesDirectory,
+        onProgress: (current, total, fraction, status) {
+          _syncProgress = total == 0 ? 0 : (current - 1 + fraction) / total;
+          _syncStatusMessage = status;
+          notifyListeners();
+          onProgress?.call(current, total, status);
+        },
+      );
+      _syncStatusMessage = 'Downloaded $count of ${items.length} files';
+      _syncProgress = items.isEmpty ? 0 : count / items.length;
+      return count;
+    } finally {
+      _isSyncingMedia = false;
+      notifyListeners();
+    }
+  }
+
+  /// Browse and list all media files from all connected GoPros on Wi-Fi
+  Future<List<GoProMediaItem>> fetchAllMediaItemsFromAllCameras({
+    String? cameraId,
+  }) async {
+    final connectedCameras = _devices.where((d) => d.isConnected).toList();
+    if (connectedCameras.isEmpty) return [];
+
+    if (cameraId == null &&
+        connectedCameras.any(
+          (c) => c.wifiIpAddress == null || c.wifiIpAddress!.isEmpty,
+        )) {
+      await discoverGoProIps();
+    }
+
+    final camerasWithIp = _devices
+        .where(
+          (d) =>
+              d.isConnected &&
+              (cameraId == null || d.id == cameraId) &&
+              d.wifiIpAddress != null &&
+              d.wifiIpAddress!.isNotEmpty,
+        )
+        .toList();
+    final List<GoProMediaItem> allItems = [];
+
+    for (final cam in camerasWithIp) {
+      final ip = cam.wifiIpAddress!;
+      if (!await _associateIp(ip) ||
+          !_devices.any((c) => c.id == cam.id && c.wifiIpAddress == ip)) {
+        throw StateError(
+          'Camera identity changed on Wi-Fi. Join ${cam.name} again.',
+        );
+      }
+      final mediaList = await fetchMediaList(ip);
+      if (mediaList == null || !mediaList.containsKey('media')) {
+        throw StateError('Could not read the SD card on ${cam.name}');
+      }
+
+      final mediaDirs = mediaList['media'] as List<dynamic>?;
+      if (mediaDirs == null) continue;
+
+      for (final dir in mediaDirs) {
+        final dirName = dir['d'] as String? ?? '100GOPRO';
+        final files = dir['fs'] as List<dynamic>?;
+        if (files == null) continue;
+
+        for (final f in expandMediaEntries(files)) {
+          final filename = f['n'] as String? ?? '';
+          final size = (f['s'] is int)
+              ? f['s'] as int
+              : int.tryParse(f['s']?.toString() ?? '0') ?? 0;
+          final modTimeSec = (f['mod'] is int)
+              ? f['mod'] as int
+              : int.tryParse(f['mod']?.toString() ?? '0') ?? 0;
+          final createTime = modTimeSec > 0
+              ? DateTime.fromMillisecondsSinceEpoch(modTimeSec * 1000)
+              : null;
+          final isVid = filename.toLowerCase().endsWith('.mp4');
+
+          allItems.add(
+            GoProMediaItem(
+              cameraName: cam.name,
+              cameraId: cam.id,
+              ip: ip,
+              directory: dirName,
+              filename: filename,
+              url: 'http://$ip:8080/videos/DCIM/$dirName/$filename',
+              sizeBytes: size,
+              modifiedTime: createTime,
+              isVideo: isVid,
+            ),
+          );
+        }
+      }
+    }
+
+    // Sort newest first
+    allItems.sort((a, b) {
+      if (a.modifiedTime != null && b.modifiedTime != null) {
+        return b.modifiedTime!.compareTo(a.modifiedTime!);
+      }
+      return b.filename.compareTo(a.filename);
+    });
+
+    return allItems;
+  }
+
+  /// Download a list of media items to target folder and optionally save to native phone gallery (DCIM/KOSMOS3D)
+  Future<int> transferMediaItems(
+    List<GoProMediaItem> items, {
+    required String targetCapturesDirectory,
+    bool saveToNativeGallery = true,
+    Function(int current, int total, double fileProgress, String status)?
+    onProgress,
+  }) async {
+    if (capture.active || capture.busy) {
+      throw StateError('Stop capture before importing files.');
+    }
+    if (!_isSyncingMedia) {
+      _cancelImport = false;
+      galleryFailures.clear();
+    }
+    await stopAllPreviews();
+    final targetDir = Directory(targetCapturesDirectory);
+    if (!await targetDir.exists()) {
+      await targetDir.create(recursive: true);
+    }
+
+    int successCount = 0;
+    final total = items.length;
+
+    for (int i = 0; i < items.length; i++) {
+      if (_cancelImport) break;
+      final item = items[i];
+      final status = 'Downloading ${item.filename} from ${item.cameraName}...';
+      onProgress?.call(i + 1, total, 0.0, status);
+
+      if (![item.directory, item.filename].every(
+        (s) =>
+            RegExp(r'^[A-Za-z0-9_.-]+$').hasMatch(s) && s != '.' && s != '..',
+      )) {
+        throw FormatException('Invalid media filename');
+      }
+      final identity =
+          (_serials[item.cameraId] ??
+                  (item.cameraId.isEmpty ? item.ip : item.cameraId))
+              .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+      final safeDirectory = item.directory.replaceAll(
+        RegExp(r'[^A-Za-z0-9_-]'),
+        '_',
+      );
+      final localName = '${identity}_${safeDirectory}_${item.filename}';
+      final savePath = '${targetDir.path}/$localName';
+      final existing = File(savePath);
+      final receipt = File('$savePath.receipt.json');
+      var verified = false;
+      if (await existing.exists() && await receipt.exists()) {
+        try {
+          final info = jsonDecode(await receipt.readAsString());
+          verified =
+              info['sha256'] ==
+                  (await sha256.bind(existing.openRead()).first).toString() &&
+              info['sourceModified'] == item.modifiedTime?.toIso8601String();
+        } catch (_) {}
+      }
+      if (verified &&
+          await existing.exists() &&
+          (item.sizeBytes <= 0 || await existing.length() == item.sizeBytes)) {
+        successCount++;
+        if (saveToNativeGallery) {
+          await _exportGallery(receipt, savePath, item.filename);
+        }
+        onProgress?.call(
+          i + 1,
+          total,
+          1,
+          'Already downloaded: ${item.filename}',
+        );
+        continue;
+      }
+      final ok = await downloadMediaFile(
+        item.ip,
+        item.directory,
+        item.filename,
+        savePath,
+        expectedBytes: item.sizeBytes,
+        onProgress: (prog) {
+          onProgress?.call(i + 1, total, prog, status);
+        },
+      );
+
+      if (ok) {
+        final digest = (await sha256.bind(existing.openRead()).first)
+            .toString();
+        final tempReceipt = File('${receipt.path}.part');
+        await tempReceipt.writeAsString(
+          jsonEncode({
+            'cameraId': item.cameraId,
+            'serial': _serials[item.cameraId],
+            'source': '${item.directory}/${item.filename}',
+            'sourceModified': item.modifiedTime?.toIso8601String(),
+            'bytes': await existing.length(),
+            'sha256': digest,
+            'importedAt': DateTime.now().toUtc().toIso8601String(),
+          }),
+          flush: true,
+        );
+        await tempReceipt.rename(receipt.path);
+        successCount++;
+        // Copy to native phone gallery if enabled
+        if (saveToNativeGallery) {
+          await _exportGallery(receipt, savePath, item.filename);
+        }
+      }
+    }
+
+    return successCount;
+  }
+
+  Future<void> _exportGallery(
+    File receipt,
+    String path,
+    String filename,
+  ) async {
+    final info =
+        jsonDecode(await receipt.readAsString()) as Map<String, dynamic>;
+    if (info['galleryExported'] == true) return;
+    final saved = await SystemSettingsService.saveToDeviceGallery(path);
+    if (saved == null) galleryFailures.add(filename);
+    info['galleryExported'] = saved != null;
+    final temp = File('${receipt.path}.part');
+    await temp.writeAsString(jsonEncode(info), flush: true);
+    await temp.rename(receipt.path);
   }
 
   @override
-  Future<void> applySettingsToDevice(String id, Map<String, String> settings) async {
-    for (final entry in settings.entries) {
-      final key = entry.key;
-      final val = entry.value;
-      int? settingId;
-      int? settingValue;
-
-      switch (key) {
-        case 'Resolution':
-          settingId = GoProSettings.resolutionId;
-          settingValue = GoProSettings.resolution[val];
-        case 'FPS':
-          settingId = GoProSettings.fpsId;
-          settingValue = GoProSettings.fps[val];
-        case 'Lens':
-          settingId = GoProSettings.lensId;
-          settingValue = GoProSettings.lens[val];
-        case 'ISO Max':
-          settingId = GoProSettings.isoMaxId;
-          settingValue = GoProSettings.isoMax[val];
-        case 'Shutter':
-          settingId = GoProSettings.shutterId;
-          settingValue = GoProSettings.shutter[val];
-        case 'White Balance':
-          settingId = GoProSettings.whiteBalanceId;
-          settingValue = GoProSettings.whiteBalance[val];
-        case 'Bitrate':
-          settingId = GoProSettings.bitrateId;
-          settingValue = GoProSettings.bitrate[val];
+  Future<void> applySettingsToDevice(
+    String id,
+    Map<String, String> settings, {
+    String captureMode = 'photo',
+  }) async {
+    _validateSettings(settings);
+    final photo = captureMode == 'photo';
+    if (photo) {
+      await setPhotoFormat(
+        id,
+        settings['Photo Format'] ?? settings['Photo Output'] ?? 'SuperPhoto',
+      );
+      // Host-paced intervals: do not arm an autonomous camera interval as well.
+      final capabilities = await _query(id, 0x32, []);
+      for (final key in [171, 172, 97, 177]) {
+        if (capabilities.containsKey(key)) await _writeSetting(id, key, 0);
       }
-
-      if (settingId != null && settingValue != null) {
-        await _writeSetting(id, settingId, settingValue);
+    } else {
+      if (settings['Resolution'] != null) {
+        await _writeSetting(
+          id,
+          2,
+          GoProSettings.resolution[settings['Resolution']] ??
+              (throw ArgumentError('Resolution')),
+        );
       }
+      if (settings['FPS'] != null) {
+        await _writeSetting(
+          id,
+          3,
+          GoProSettings.fps[settings['FPS']] ?? (throw ArgumentError('FPS')),
+        );
+      }
+      if (settings['Bitrate'] != null) {
+        await _writeSetting(
+          id,
+          182,
+          GoProSettings.bitrate[settings['Bitrate']] ??
+              (throw ArgumentError('Bitrate')),
+        );
+      }
+      final capabilities = await _query(id, 0x32, []);
+      for (final key in [156, 167, 168]) {
+        if (capabilities.containsKey(key)) await _writeSetting(id, key, 0);
+      }
+    }
+    final lens = settings['Lens'];
+    if (lens != null) {
+      final key = photo ? 122 : 121;
+      final supported = await _capabilities(id, key);
+      final candidates = photo
+          ? (lens == 'Linear'
+                ? [32, 28, 10]
+                : lens == 'Wide'
+                ? [31, 27, 0]
+                : <int>[])
+          : [GoProSettings.videoLens[lens] ?? -1];
+      final value = candidates.where(supported.contains).firstOrNull;
+      if (value == null) {
+        throw UnsupportedError(
+          'Camera $id cannot use $lens in the selected mode',
+        );
+      }
+      await _writeSetting(id, key, value);
     }
   }
 
-  Future<void> applySettingsToAll(Map<String, String> settings) async {
-    for (final cam in _devices.where((d) => d.isConnected)) {
-      await applySettingsToDevice(cam.id, settings);
+  Future<void> applySettingsToCurrentMode(
+    String id,
+    Map<String, String> settings,
+  ) async {
+    if (capture.active || capture.busy) {
+      throw StateError('Stop the active rig first');
     }
+    _validateSettings(settings);
+    final mode = await _status(id, 89);
+    if (mode != 12 && mode != 16) {
+      throw StateError('Select Single Photo or Video before applying settings');
+    }
+    await applySettingsToDevice(
+      id,
+      settings,
+      captureMode: mode == 12 ? 'video' : 'photo',
+    );
+    updateCameraSettings(id, settings);
   }
 
-  // ─── SHUTTER CONTROL ──────────────────────────────────────
+  Future<void> applySettingsToAll(
+    Map<String, String> settings, {
+    String captureMode = 'photo',
+  }) => prepareCapture(captureMode, settings);
 
   @override
   Future<void> triggerShutter(String id) async {
-    final chars = _charCache[id];
-    if (chars == null || chars['commandReq'] == null) return;
-    try {
-      await chars['commandReq']!.write(
-        [0x03, 0x01, 0x01, 0x01],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
-    } catch (e) {
-      debugPrint("Shutter trigger error: $e");
+    await _protocol(id).exchange('command', [1, 1, 1]);
+    if (_expectedModes[id] == 12 && await _status(id, 10) != 1) {
+      throw StateError('Camera $id did not confirm video recording');
     }
   }
 
   @override
   Future<void> stopShutter(String id) async {
-    final chars = _charCache[id];
-    if (chars == null || chars['commandReq'] == null) return;
-    try {
-      await chars['commandReq']!.write(
-        [0x03, 0x01, 0x01, 0x00],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
-    } catch (e) {
-      debugPrint("Shutter stop error: $e");
-    }
+    await _protocol(id).exchange('command', [1, 1, 0]);
+    await _waitIdle(id);
   }
 
-  Future<void> triggerAllShutters() async {
-    for (final cam in _devices.where((d) => d.isConnected)) {
-      await triggerShutter(cam.id);
-    }
-  }
+  Future<void> triggerAllShutters() => capture.toggle();
+  Future<void> stopAllShutters() => capture.stop();
 
   // ─── SD CARD FORMAT ────────────────────────────────────────
 
   /// Format SD card — MUST stop recording first
   Future<void> formatSdCard(String id) async {
-    final chars = _charCache[id];
-    if (chars == null || chars['commandReq'] == null) return;
-    try {
-      // 1. First, stop any recording
-      await stopShutter(id);
-      await Future.delayed(const Duration(milliseconds: 500));
-      // 2. Switch to idle mode to ensure camera isn't busy
-      await chars['commandReq']!.write(
-        [0x03, 0x01, 0x01, 0x00], // Shutter off
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
-      await Future.delayed(const Duration(milliseconds: 300));
-      // 3. Format SD Card command (Command ID 0x3C, no params)
-      await chars['commandReq']!.write(
-        [0x01, 0x3C], 
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
-      debugPrint("GoPro [$id] SD Card format triggered");
-    } catch (e) {
-      debugPrint("Format SD error: $e");
-    }
+    throw UnsupportedError(
+      'Format the SD card on the camera; no verified format command is implemented',
+    );
   }
 
   /// Format SD cards on ALL connected cameras
@@ -634,21 +1663,10 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     if (chars == null || chars['commandReq'] == null) return;
     try {
       // Sleep/Power Off command
-      await chars['commandReq']!.write(
-        [0x01, 0x05],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
+      await chars['commandReq']!.write([0x01, 0x05], withoutResponse: false);
       debugPrint("GoPro [$id] Power off sent");
     } catch (e) {
       debugPrint("Power off error: $e");
-    }
-  }
-
-  /// Power off all connected cameras
-  Future<void> powerOffAll() async {
-    for (final cam in _devices.where((d) => d.isConnected)) {
-      await powerOff(cam.id);
-      await Future.delayed(const Duration(milliseconds: 500));
     }
   }
 
@@ -660,7 +1678,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x01, 0x05], // Sleep command
         withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
+      );
     } catch (e) {
       debugPrint("Sleep error: $e");
     }
@@ -674,10 +1692,12 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     if (chars == null || chars['commandReq'] == null) return;
     try {
       // AP Mode: ON
-      await chars['commandReq']!.write(
-        [0x03, 0x17, 0x01, 0x01],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
+      await chars['commandReq']!.write([
+        0x03,
+        0x17,
+        0x01,
+        0x01,
+      ], withoutResponse: false);
       debugPrint("GoPro [$id] WiFi AP enabled");
     } catch (e) {
       debugPrint("WiFi enable error: $e");
@@ -689,65 +1709,16 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
     try {
-      await chars['commandReq']!.write(
-        [0x03, 0x17, 0x01, 0x00],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
+      await chars['commandReq']!.write([
+        0x03,
+        0x17,
+        0x01,
+        0x00,
+      ], withoutResponse: false);
       debugPrint("GoPro [$id] WiFi AP disabled");
     } catch (e) {
       debugPrint("WiFi disable error: $e");
     }
-  }
-
-  /// Tether camera to a mobile hotspot (STA Mode)
-  Future<void> tetherToHotspot(String id, String ssid, String password) async {
-    final chars = _charCache[id];
-    if (chars == null || chars['commandReq'] == null) return;
-    try {
-      final ssidBytes = utf8.encode(ssid);
-      final passBytes = utf8.encode(password);
-      
-      // Command 23 (0x17): Station Mode
-      // Subcommand 2: Connect to New AP
-      final payload = <int>[
-        0x17, 0x02,
-        ssidBytes.length, ...ssidBytes,
-        passBytes.length, ...passBytes
-      ];
-      
-      await chars['commandReq']!.write(
-        [payload.length, ...payload],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 4));
-      
-      debugPrint("GoPro [$id] Tethering to $ssid");
-    } catch (e) {
-      debugPrint("Hotspot tether error: $e");
-    }
-  }
-
-  /// Tether ALL cameras to mobile hotspot
-  Future<void> tetherAllToHotspot(String ssid, String password) async {
-    for (final cam in _devices.where((d) => d.isConnected)) {
-      await tetherToHotspot(cam.id, ssid, password);
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-  }
-
-  /// Transfer media from ALL cameras to local storage
-  Future<void> transferAllMedia() async {
-    for (final cam in _devices.where((d) => d.isConnected)) {
-      debugPrint("GoPro [${cam.id}] Downloading media files via HTTP...");
-      await Future.delayed(const Duration(seconds: 2)); // Simulate download time
-    }
-  }
-
-  /// Get AP Password (Dummy/HTTP implementation reminder)
-  Future<String?> getApPassword(String id) async {
-    // Open GoPro BLE does not officially support querying AP password directly in all firmware.
-    // Recommended way is via HTTP when connected: http://10.5.5.9:8080/gopro/camera/ap/password
-    // Returning a placeholder for UI demonstration.
-    return "goprohero"; 
   }
 
   /// Enable WiFi on ALL connected cameras
@@ -766,10 +1737,12 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     if (chars == null || chars['settingReq'] == null) return;
     try {
       // Setting ID 83: GPS on/off
-      await chars['settingReq']!.write(
-        [0x03, 0x53, 0x01, enabled ? 0x01 : 0x00],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
+      await chars['settingReq']!.write([
+        0x03,
+        0x53,
+        0x01,
+        enabled ? 0x01 : 0x00,
+      ], withoutResponse: false);
       debugPrint("GoPro [$id] GPS: ${enabled ? 'ON' : 'OFF'}");
     } catch (e) {
       debugPrint("GPS toggle error: $e");
@@ -783,10 +1756,12 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     final chars = _charCache[id];
     if (chars == null || chars['commandReq'] == null) return;
     try {
-      await chars['commandReq']!.write(
-        [0x03, 0x16, 0x01, start ? 0x01 : 0x00],
-        withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
+      await chars['commandReq']!.write([
+        0x03,
+        0x16,
+        0x01,
+        start ? 0x01 : 0x00,
+      ], withoutResponse: false);
       debugPrint("GoPro [$id] Locate: ${start ? 'ON' : 'OFF'}");
     } catch (e) {
       debugPrint("Locate error: $e");
@@ -804,7 +1779,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['queryReq']!.write(
         [0x02, 0x13, 0x3D], // Query status 61 (media count)
         withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
+      );
       return null; // Response comes async via notification
     } catch (e) {
       debugPrint("Media query error: $e");
@@ -822,7 +1797,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       await chars['commandReq']!.write(
         [0x01, 0x18], // HiLight command
         withoutResponse: false,
-      ).timeout(const Duration(seconds: 2));
+      );
       debugPrint("GoPro [$id] HiLight tag added");
     } catch (e) {
       debugPrint("HiLight error: $e");
@@ -831,7 +1806,10 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
 
   // ─── LEGACY COMPAT ────────────────────────────────────────
 
-  void toggleRecording(String id, bool start) async {
+  Future<void> toggleRecording(String id, bool start) async {
+    if (capture.active || capture.busy) {
+      throw StateError('Use the capture screen to control the active rig');
+    }
     if (start) {
       await triggerShutter(id);
     } else {
@@ -839,31 +1817,70 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     }
     final index = _devices.indexWhere((d) => d.id == id);
     if (index != -1) {
-      _devices[index] = _devices[index].copyWith(isRecording: start);
+      _devices[index] = _devices[index].copyWith(
+        isRecording: await _status(id, 10) == 1,
+      );
       notifyListeners();
     }
   }
 
-  void toggleAllRecording(bool start) {
+  Future<void> toggleAllRecording(bool start) async {
     for (int i = 0; i < _devices.length; i++) {
-      toggleRecording(_devices[i].id, start);
+      await toggleRecording(_devices[i].id, start);
     }
   }
 
   void updateCameraSettings(String id, Map<String, String> newSettings) {
     final index = _devices.indexWhere((d) => d.id == id);
     if (index != -1) {
-      final updatedSettings = Map<String, String>.from(_devices[index].currentSettings)
-        ..addAll(newSettings);
-      _devices[index] = _devices[index].copyWith(currentSettings: updatedSettings);
+      final updatedSettings = Map<String, String>.from(
+        _devices[index].currentSettings,
+      )..addAll(newSettings);
+      _devices[index] = _devices[index].copyWith(
+        currentSettings: updatedSettings,
+      );
       notifyListeners();
     }
   }
 
   @override
   void dispose() {
-    for (final timer in _keepAliveTimers.values) { timer.cancel(); }
-    for (final timer in _batteryPollTimers.values) { timer.cancel(); }
+    _scanSubscription?.cancel();
+    capture.removeListener(notifyListeners);
+    capture.dispose();
+    for (final p in _protocols.values) {
+      p.close(StateError('Service disposed'));
+    }
+    for (final subs in _subscriptions.values) {
+      for (final sub in subs) {
+        sub.cancel();
+      }
+    }
+    for (final timer in _keepAliveTimers.values) {
+      timer.cancel();
+    }
+    for (final timer in _batteryPollTimers.values) {
+      timer.cancel();
+    }
     super.dispose();
   }
+}
+
+class _GoProRigCamera implements RigCamera {
+  _GoProRigCamera(this.service, this.id);
+  final GoProService service;
+  @override
+  final String id;
+  @override
+  Future<void> configure(
+    String mode,
+    Map<String, String> settings,
+    void Function(String) progress,
+  ) => service._configure(id, mode, settings, progress);
+  @override
+  Future<void> verifyReady() => service._verifyReady(id);
+  @override
+  Future<void> start() => service.triggerShutter(id);
+  @override
+  Future<void> stop() => service.stopShutter(id);
 }

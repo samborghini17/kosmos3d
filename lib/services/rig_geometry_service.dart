@@ -17,12 +17,17 @@ class RigCamera {
   RigCamera({
     required this.cameraId,
     this.label = '',
-    this.offsetX = 0, this.offsetY = 0, this.offsetZ = 0,
-    this.rotYaw = 0, this.rotPitch = 0, this.rotRoll = 0,
+    this.offsetX = 0,
+    this.offsetY = 0,
+    this.offsetZ = 0,
+    this.rotYaw = 0,
+    this.rotPitch = 0,
+    this.rotRoll = 0,
   });
 
   Map<String, dynamic> toJson() => {
-    'camera_id': cameraId, 'label': label,
+    'camera_id': cameraId,
+    'label': label,
     'offset': {'x': offsetX, 'y': offsetY, 'z': offsetZ},
     'rotation': {'yaw': rotYaw, 'pitch': rotPitch, 'roll': rotRoll},
   };
@@ -58,13 +63,16 @@ class RigGeometryService extends ChangeNotifier {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    _namingTemplate = prefs.getString('naming_template') ?? '{project}_{camera}_{index}';
+    _namingTemplate =
+        prefs.getString('naming_template') ?? '{project}_{camera}_{index}';
     final json = prefs.getString('rig_cameras');
     if (json != null) {
       try {
         final list = jsonDecode(json) as List;
         _cameras.clear();
-        _cameras.addAll(list.map((e) => RigCamera.fromJson(e as Map<String, dynamic>)));
+        _cameras.addAll(
+          list.map((e) => RigCamera.fromJson(e as Map<String, dynamic>)),
+        );
       } catch (_) {}
     }
     notifyListeners();
@@ -72,7 +80,10 @@ class RigGeometryService extends ChangeNotifier {
 
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('rig_cameras', jsonEncode(_cameras.map((c) => c.toJson()).toList()));
+    await prefs.setString(
+      'rig_cameras',
+      jsonEncode(_cameras.map((c) => c.toJson()).toList()),
+    );
     await prefs.setString('naming_template', _namingTemplate);
   }
 
@@ -89,24 +100,31 @@ class RigGeometryService extends ChangeNotifier {
     required int index,
     String extension = 'jpg',
   }) {
-    return _namingTemplate
-        .replaceAll('{project}', projectName)
-        .replaceAll('{camera}', cameraLabel)
-        .replaceAll('{index}', index.toString().padLeft(4, '0'))
-        .replaceAll('{date}', DateTime.now().toIso8601String().split('T')[0])
-        .replaceAll('{time}', DateTime.now().toIso8601String().split('T')[1].split('.')[0].replaceAll(':', ''))
-        + '.$extension';
+    return '${_namingTemplate.replaceAll('{project}', projectName).replaceAll('{camera}', cameraLabel).replaceAll('{index}', index.toString().padLeft(4, '0')).replaceAll('{date}', DateTime.now().toIso8601String().split('T')[0]).replaceAll('{time}', DateTime.now().toIso8601String().split('T')[1].split('.')[0].replaceAll(':', ''))}.$extension';
   }
 
   void addCamera(String cameraId, String label) {
     if (_cameras.any((c) => c.cameraId == cameraId)) return;
-    _cameras.add(RigCamera(cameraId: cameraId, label: label.isNotEmpty ? label : 'CAM${_cameras.length + 1}'));
+    _cameras.add(
+      RigCamera(
+        cameraId: cameraId,
+        label: label.isNotEmpty ? label : 'CAM${_cameras.length + 1}',
+      ),
+    );
     _save();
     notifyListeners();
   }
 
-  void updateCamera(String cameraId, {double? x, double? y, double? z,
-      double? yaw, double? pitch, double? roll, String? label}) {
+  void updateCamera(
+    String cameraId, {
+    double? x,
+    double? y,
+    double? z,
+    double? yaw,
+    double? pitch,
+    double? roll,
+    String? label,
+  }) {
     final idx = _cameras.indexWhere((c) => c.cameraId == cameraId);
     if (idx == -1) return;
     if (x != null) _cameras[idx].offsetX = x;
@@ -141,10 +159,16 @@ class RigGeometryService extends ChangeNotifier {
       final phoneHeadingRad = point.heading * pi / 180;
 
       // Phone world position (simplified — GPS to local meters)
-      final refLat = trajectory.isNotEmpty ? trajectory[0].latitude : point.latitude;
-      final refLon = trajectory.isNotEmpty ? trajectory[0].longitude : point.longitude;
-      final phonePosX = (point.longitude - refLon) * 111320 * cos(refLat * pi / 180);
-      final phonePosY = point.altitude - (trajectory.isNotEmpty ? trajectory[0].altitude : 0);
+      final refLat = trajectory.isNotEmpty
+          ? trajectory[0].latitude
+          : point.latitude;
+      final refLon = trajectory.isNotEmpty
+          ? trajectory[0].longitude
+          : point.longitude;
+      final phonePosX =
+          (point.longitude - refLon) * 111320 * cos(refLat * pi / 180);
+      final phonePosY =
+          point.altitude - (trajectory.isNotEmpty ? trajectory[0].altitude : 0);
       final phonePosZ = (point.latitude - refLat) * 110540;
 
       final cameraPoses = <Map<String, dynamic>>[];
@@ -157,9 +181,11 @@ class RigGeometryService extends ChangeNotifier {
         // Rotate camera offset by phone heading
         final cosH = cos(phoneHeadingRad);
         final sinH = sin(phoneHeadingRad);
-        final worldX = phonePosX + rigCam.offsetX * cosH - rigCam.offsetZ * sinH;
+        final worldX =
+            phonePosX + rigCam.offsetX * cosH - rigCam.offsetZ * sinH;
         final worldY = phonePosY + rigCam.offsetY;
-        final worldZ = phonePosZ + rigCam.offsetX * sinH + rigCam.offsetZ * cosH;
+        final worldZ =
+            phonePosZ + rigCam.offsetX * sinH + rigCam.offsetZ * cosH;
 
         final camYaw = point.heading + rigCam.rotYaw;
         final camPitch = rigCam.rotPitch;
@@ -175,7 +201,14 @@ class RigGeometryService extends ChangeNotifier {
           ),
           'position': {'x': worldX, 'y': worldY, 'z': worldZ},
           'rotation': {'yaw': camYaw, 'pitch': camPitch, 'roll': camRoll},
-          'transform_matrix': _buildTransformMatrix(worldX, worldY, worldZ, camYaw, camPitch, camRoll),
+          'transform_matrix': _buildTransformMatrix(
+            worldX,
+            worldY,
+            worldZ,
+            camYaw,
+            camPitch,
+            camRoll,
+          ),
         });
       }
 
@@ -185,7 +218,11 @@ class RigGeometryService extends ChangeNotifier {
         'phone': {
           'position': {'x': phonePosX, 'y': phonePosY, 'z': phonePosZ},
           'heading': point.heading,
-          'gps': {'lat': point.latitude, 'lon': point.longitude, 'alt': point.altitude},
+          'gps': {
+            'lat': point.latitude,
+            'lon': point.longitude,
+            'alt': point.altitude,
+          },
           'speed_ms': point.speed,
           'accuracy_m': point.accuracy,
           'pressure_hpa': point.pressure,
@@ -211,22 +248,31 @@ class RigGeometryService extends ChangeNotifier {
     });
   }
 
-  List<List<double>> _buildTransformMatrix(double x, double y, double z,
-      double yawDeg, double pitchDeg, double rollDeg) {
+  List<List<double>> _buildTransformMatrix(
+    double x,
+    double y,
+    double z,
+    double yawDeg,
+    double pitchDeg,
+    double rollDeg,
+  ) {
     final yaw = yawDeg * pi / 180;
     final pitch = pitchDeg * pi / 180;
     final roll = rollDeg * pi / 180;
 
     // Rotation matrix: Rz(yaw) * Ry(pitch) * Rx(roll)
-    final cy = cos(yaw); final sy = sin(yaw);
-    final cp = cos(pitch); final sp = sin(pitch);
-    final cr = cos(roll); final sr = sin(roll);
+    final cy = cos(yaw);
+    final sy = sin(yaw);
+    final cp = cos(pitch);
+    final sp = sin(pitch);
+    final cr = cos(roll);
+    final sr = sin(roll);
 
     return [
-      [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr, x],
-      [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr, y],
-      [-sp,   cp*sr,            cp*cr,             z],
-      [0,     0,                0,                 1],
+      [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr, x],
+      [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr, y],
+      [-sp, cp * sr, cp * cr, z],
+      [0, 0, 0, 1],
     ];
   }
 }

@@ -1,3 +1,4 @@
+import '../l10n/app_text.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/gopro_service.dart';
+import '../widgets/gaussian_labs_qr.dart';
 
 /// QR Code camera configuration: generate QR codes to quickly
 /// share camera settings across devices.
@@ -15,17 +17,28 @@ class QrConfigScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
     return Scaffold(
-      appBar: AppBar(title: Text(settings.translate('qr_config'))),
+      appBar: AppBar(title: AppText(settings.translate('qr_config'))),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(settings.translate('qr_config_desc'),
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 32),
+              AppText(
+                settings.translate('qr_config_desc'),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => showGaussianLabsQr(context),
+                icon: const Icon(Icons.qr_code),
+                label: const AppText('GoPro Labs: Gaussian daylight video'),
+              ),
+              const SizedBox(height: 16),
               Expanded(
                 child: Row(
                   children: [
@@ -65,72 +78,121 @@ class QrConfigScreen extends StatelessWidget {
       settingsToEncode = connectedCams.first.currentSettings;
     } else {
       settingsToEncode = {
-        'Resolution': '4K', 'FPS': '30', 'Lens': 'Linear',
-        'ISO Max': '400', 'Shutter': 'Auto', 'White Balance': '5500K', 'Bitrate': 'High',
+        'Resolution': '4K',
+        'FPS': '30',
+        'Lens': 'Linear',
+        'ISO Max': '400',
+        'Shutter': 'Auto',
+        'White Balance': '5500K',
+        'Bitrate': 'High',
       };
     }
 
-    String qrData;
-    try {
-      qrData = jsonEncode({'kosmos3d': '1.0', 'settings': settingsToEncode});
-    } catch (e) {
-      debugPrint("QR Encode Error: $e");
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to generate QR data')));
-      return;
-    }
+    final qrData = jsonEncode({
+      'kosmos3d': '1.0',
+      'settings': settingsToEncode,
+    });
 
     showDialog(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).cardTheme.color,
-        title: const Text('📱 Camera Settings QR', style: TextStyle(fontSize: 16)),
+        title: const AppText(
+          '📱 Camera Settings QR',
+          style: TextStyle(fontSize: 16),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             GestureDetector(
-              onTap: () => Navigator.push(ctx, MaterialPageRoute(
-                builder: (_) => _FullScreenQr(data: qrData, settings: settingsToEncode),
-              )),
+              onTap: () => Navigator.push(
+                ctx,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      _FullScreenQr(data: qrData, settings: settingsToEncode),
+                ),
+              ),
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                child: QrImageView(data: qrData, version: QrVersions.auto, size: 260),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: QrImageView(
+                  data: qrData,
+                  version: QrVersions.auto,
+                  size: 260,
+                ),
               ),
             ),
             const SizedBox(height: 8),
-            Text('Tap QR to view fullscreen',
-                style: TextStyle(color: Theme.of(ctx).primaryColor, fontSize: 12, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text('Scan from another phone to apply settings',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(ctx).textTheme.bodySmall?.color?.withValues(alpha: 0.5), fontSize: 11)),
-            const SizedBox(height: 8),
-            ...settingsToEncode.entries.map((e) => Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(e.key, style: TextStyle(color: Theme.of(ctx).textTheme.bodySmall?.color?.withValues(alpha: 0.4), fontSize: 11)),
-                  Text(e.value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                ],
+            AppText(
+              'Tap QR to view fullscreen',
+              style: TextStyle(
+                color: Theme.of(ctx).primaryColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
-            )),
+            ),
+            const SizedBox(height: 4),
+            AppText(
+              'Scan from another phone to apply settings',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(
+                  ctx,
+                ).textTheme.bodySmall?.color?.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...settingsToEncode.entries.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    AppText(
+                      e.key,
+                      style: TextStyle(
+                        color: Theme.of(
+                          ctx,
+                        ).textTheme.bodySmall?.color?.withValues(alpha: 0.4),
+                        fontSize: 11,
+                      ),
+                    ),
+                    AppText(
+                      e.value,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
             TextButton.icon(
               icon: const Icon(Icons.copy, size: 16),
-              label: const Text('Copy to clipboard'),
+              label: const AppText('Copy to clipboard'),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: qrData));
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Settings JSON copied!'), backgroundColor: Colors.green),
+                  const SnackBar(
+                    content: AppText('Settings JSON copied!'),
+                    backgroundColor: Colors.green,
+                  ),
                 );
               },
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const AppText('Close'),
+          ),
         ],
       ),
     );
@@ -143,7 +205,10 @@ class QrConfigScreen extends StatelessWidget {
       if (data?.text == null || data!.text!.isEmpty) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Clipboard is empty'), backgroundColor: Colors.orange),
+            const SnackBar(
+              content: AppText('Clipboard is empty'),
+              backgroundColor: Colors.orange,
+            ),
           );
         }
         return;
@@ -158,37 +223,77 @@ class QrConfigScreen extends StatelessWidget {
             context: context,
             builder: (ctx) => AlertDialog(
               backgroundColor: const Color(0xFF1E1E1E),
-              title: const Text('✅ Settings Found!', style: TextStyle(color: Colors.white)),
+              title: const AppText(
+                '✅ Settings Found!',
+                style: TextStyle(color: Colors.white),
+              ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: settings.entries.map((e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(e.key, style: const TextStyle(color: Colors.white54, fontSize: 13)),
-                      Text(e.value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                    ],
-                  ),
-                )).toList(),
+                children: settings.entries
+                    .map(
+                      (e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            AppText(
+                              e.key,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 13,
+                              ),
+                            ),
+                            AppText(
+                              e.value,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const AppText('Cancel'),
+                ),
                 ElevatedButton(
                   onPressed: () async {
                     Navigator.pop(ctx);
-                    await goPro.applySettingsToAll(settings);
-                    for (final cam in goPro.devices.where((d) => d.isConnected)) {
+                    try {
+                      await goPro.applySettingsToAll(settings);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: AppText('Settings not applied: $e'),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+                    for (final cam in goPro.devices.where(
+                      (d) => d.isConnected,
+                    )) {
                       goPro.updateCameraSettings(cam.id, settings);
                     }
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Applied to ${goPro.devices.where((d) => d.isConnected).length} cameras'),
-                            backgroundColor: Colors.green),
+                        SnackBar(
+                          content: AppText(
+                            'Applied to ${goPro.devices.where((d) => d.isConnected).length} cameras',
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
                       );
                     }
                   },
-                  child: const Text('Apply to All Cameras'),
+                  child: const AppText('Apply to All Cameras'),
                 ),
               ],
             ),
@@ -198,7 +303,10 @@ class QrConfigScreen extends StatelessWidget {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid settings format'), backgroundColor: Colors.redAccent),
+          const SnackBar(
+            content: AppText('Invalid settings format'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
@@ -211,7 +319,12 @@ class _ActionCard extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
 
-  const _ActionCard({required this.icon, required this.title, required this.subtitle, required this.onTap});
+  const _ActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -230,11 +343,24 @@ class _ActionCard extends StatelessWidget {
           children: [
             Icon(icon, size: 48, color: primary),
             const SizedBox(height: 12),
-            Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                textAlign: TextAlign.center),
+            AppText(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 6),
-            Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
-                textAlign: TextAlign.center),
+            AppText(
+              subtitle,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 11,
+              ),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),
@@ -256,32 +382,62 @@ class _FullScreenQr extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
-        title: const Text('Scan this QR', style: TextStyle(color: Colors.black87)),
+        title: const AppText(
+          'Scan this QR',
+          style: TextStyle(color: Colors.black87),
+        ),
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              QrImageView(data: data, version: QrVersions.auto, size: MediaQuery.of(context).size.width * 0.85),
+              QrImageView(
+                data: data,
+                version: QrVersions.auto,
+                size: MediaQuery.of(context).size.width * 0.85,
+              ),
               const SizedBox(height: 24),
-              const Text('KOSMOS 3D Camera Settings',
-                  style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 12),
-              ...settings.entries.map((e) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(e.key, style: const TextStyle(color: Colors.black45, fontSize: 14)),
-                    Text(e.value, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
-                  ],
+              const AppText(
+                'KOSMOS 3D Camera Settings',
+                style: TextStyle(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
-              )),
+              ),
+              const SizedBox(height: 12),
+              ...settings.entries.map(
+                (e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      AppText(
+                        e.key,
+                        style: const TextStyle(
+                          color: Colors.black45,
+                          fontSize: 14,
+                        ),
+                      ),
+                      AppText(
+                        e.value,
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 16),
-              const Text('Scan with any QR reader app\nor share screenshot to another device',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.black38, fontSize: 12)),
+              const AppText(
+                'Scan with any QR reader app\nor share screenshot to another device',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black38, fontSize: 12),
+              ),
             ],
           ),
         ),

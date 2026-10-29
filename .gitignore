@@ -59,3 +59,6 @@ desktop.ini
 # Generated files
 *.g.dart
 *.freezed.dart
+
+# Local migration research, build logs and temporary tool files
+/work/

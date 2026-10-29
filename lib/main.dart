@@ -1,19 +1,19 @@
+import 'l10n/app_text.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
 import 'screens/main_menu.dart';
-import 'screens/splash_screen.dart';
 import 'providers/settings_provider.dart';
 import 'services/gopro_service.dart';
 import 'services/project_service.dart';
 import 'services/trajectory_service.dart';
 import 'services/upload_service.dart';
 import 'services/cloud_storage_service.dart';
+import 'services/orientation_service.dart';
 import 'services/rig_geometry_service.dart';
 import 'services/lidar_service.dart';
-import 'services/export_service.dart';
-import 'services/audio_guide_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,13 +23,14 @@ void main() {
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => GoProService()),
         ChangeNotifierProvider(create: (_) => ProjectService()),
+        ChangeNotifierProvider(create: (_) => OrientationService()),
         ChangeNotifierProvider(create: (_) => TrajectoryService()),
         ChangeNotifierProvider(create: (_) => UploadService()),
         ChangeNotifierProvider(create: (_) => CloudStorageService()),
         ChangeNotifierProvider(create: (_) => RigGeometryService()),
-        ChangeNotifierProvider(create: (_) => LidarService()),
-        Provider(create: (_) => ExportService()),
-        ChangeNotifierProvider(create: (_) => AudioGuideService()),
+        ChangeNotifierProvider(
+          create: (_) => LidarService()..checkAvailability(),
+        ),
       ],
       child: const KosmosApp(),
     ),
@@ -45,11 +46,14 @@ class KosmosApp extends StatelessWidget {
       builder: (context, settings, _) {
         return MaterialApp(
           title: 'KOSMOS 3D',
+          locale: Locale(settings.currentLanguage),
+          supportedLocales: const [Locale('en'), Locale('de')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           // Follow user preference (system/dark/light)
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: settings.themeMode,
-          home: SplashScreen(nextScreen: const _StartupWrapper()),
+          home: const _StartupWrapper(),
           debugShowCheckedModeBanner: false,
         );
       },
@@ -95,10 +99,16 @@ class _StartupWrapperState extends State<_StartupWrapper> {
           backgroundColor: bgColor,
           title: Column(
             children: [
-              const Text('🌌', style: TextStyle(fontSize: 40)),
+              const AppText('🌌', style: TextStyle(fontSize: 40)),
               const SizedBox(height: 8),
-              Text('Welcome to KOSMOS 3D',
-                  style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
+              AppText(
+                'Welcome to KOSMOS 3D',
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -107,31 +117,43 @@ class _StartupWrapperState extends State<_StartupWrapper> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _setupStep(
-                    Theme.of(ctx).platform == TargetPlatform.iOS
-                        ? Icons.phone_iphone
-                        : Icons.phone_android,
-                    'Mount your phone',
-                    'Attach your phone to the rig\'s phone mount for accurate sensor tracking (gyroscope, GPS, compass).',
-                    textColor, mutedColor),
+                  Icons.phone_android,
+                  'Mount your phone',
+                  'Attach your phone to the rig\'s phone mount for accurate sensor tracking (gyroscope, GPS, compass).',
+                  textColor,
+                  mutedColor,
+                ),
                 const SizedBox(height: 14),
-                _setupStep(Icons.bluetooth, 'Power on GoPros',
-                    'Turn on all GoPro cameras and make sure Wireless Connections are enabled in each camera\'s settings.',
-                    textColor, mutedColor),
+                _setupStep(
+                  Icons.bluetooth,
+                  'Power on GoPros',
+                  'Turn on all GoPro cameras and make sure Wireless Connections are enabled in each camera\'s settings.',
+                  textColor,
+                  mutedColor,
+                ),
                 const SizedBox(height: 14),
-                _setupStep(Icons.search, 'Scan & Connect',
-                    'Go to Device Manager → tap "Scan" → tap each camera to connect. No system Bluetooth pairing needed — the app handles everything!',
-                    textColor, mutedColor),
+                _setupStep(
+                  Icons.search,
+                  'Scan & Connect',
+                  'Go to Device Manager → tap "Scan" → tap each camera to connect. No system Bluetooth pairing needed — the app handles everything!',
+                  textColor,
+                  mutedColor,
+                ),
                 const SizedBox(height: 14),
-                _setupStep(Icons.cloud, 'Cloud Storage (Optional)',
-                    'Go to Settings → Cloud Storage to set up Backblaze B2 for automatic uploads.',
-                    textColor, mutedColor),
+                _setupStep(
+                  Icons.cloud,
+                  'Cloud Storage (Optional)',
+                  'Go to Settings → Cloud Storage to set up Backblaze B2 for automatic uploads.',
+                  textColor,
+                  mutedColor,
+                ),
               ],
             ),
           ),
           actions: [
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Got it — Let\'s Go!'),
+              child: const AppText('Got it — Let\'s Go!'),
             ),
           ],
         );
@@ -139,7 +161,13 @@ class _StartupWrapperState extends State<_StartupWrapper> {
     );
   }
 
-  Widget _setupStep(IconData icon, String title, String desc, Color textColor, Color mutedColor) {
+  Widget _setupStep(
+    IconData icon,
+    String title,
+    String desc,
+    Color textColor,
+    Color mutedColor,
+  ) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -149,9 +177,16 @@ class _StartupWrapperState extends State<_StartupWrapper> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13)),
+              AppText(
+                title,
+                style: TextStyle(
+                  color: textColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text(desc, style: TextStyle(color: mutedColor, fontSize: 12)),
+              AppText(desc, style: TextStyle(color: mutedColor, fontSize: 12)),
             ],
           ),
         ),
@@ -162,4 +197,3 @@ class _StartupWrapperState extends State<_StartupWrapper> {
   @override
   Widget build(BuildContext context) => const MainMenuScreen();
 }
-

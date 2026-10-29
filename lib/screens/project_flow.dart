@@ -1,11 +1,12 @@
+import '../l10n/app_text.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/gopro_service.dart';
 import '../services/project_service.dart';
-import '../widgets/camera_connection_status.dart';
 
 import 'capture_session.dart';
+import '../widgets/gaussian_labs_qr.dart';
 
 class ProjectFlowScreen extends StatefulWidget {
   const ProjectFlowScreen({super.key});
@@ -18,16 +19,44 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
   int _currentStep = 0;
   final _nameController = TextEditingController();
   String _captureMode = 'photo';
-  bool _smartCapture = false;
+  final bool _smartCapture = false;
 
   // Camera settings for the project
+  String _photoFormat = 'Standard Photo';
+  String _interval = '1s';
+  String _guidance =
+      SettingsProvider.builtInPresets.first.settings['Guidance']!;
+  String _orientation = 'Portrait';
+  String _targetIso = '100';
   String _resolution = '4K';
   String _fps = '30';
   String _lens = 'Linear';
-  String _isoMax = '400';
-  String _shutter = 'Auto';
-  String _whiteBalance = '5500K';
+  String _isoMax = 'Camera preset';
+  String _shutter = 'Camera preset';
+  String _whiteBalance = 'Camera preset';
   String _bitrate = 'High';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final provider = context.read<SettingsProvider>();
+      await provider.ready;
+      final defaults = await provider.getDefaultSettings();
+      if (!mounted) return;
+      setState(() {
+        _captureMode = defaults['Mode'] ?? 'photo';
+        _photoFormat = defaults['Photo Format'] ?? 'Standard Photo';
+        _interval = provider.captureInterval;
+        _resolution = defaults['Resolution'] ?? '4K';
+        _fps = defaults['FPS'] ?? '30';
+        _lens = defaults['Lens'] ?? 'Linear';
+        _guidance = defaults['Guidance'] ?? _guidance;
+        _orientation = defaults['Orientation'] ?? 'Portrait';
+        _targetIso = defaults['Target ISO'] ?? '100';
+      });
+    });
+  }
 
   @override
   void dispose() {
@@ -41,214 +70,432 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
     final goPro = context.watch<GoProService>();
     final connectedCams = goPro.devices.where((d) => d.isConnected).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(settings.translate('new_project')),
-        actions: const [
-          CameraConnectionStatus(),
-        ],
-      ),
-      body: Stepper(
-        currentStep: _currentStep,
-        onStepContinue: () {
-          if (_currentStep == 0 && _nameController.text.trim().isEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Please enter a project name.')),
-            );
-            return;
-          }
-          if (_currentStep < 2) {
-            setState(() => _currentStep++);
-          } else {
-            // Final step: Create the project and navigate to capture session
-            _createProjectAndStart(context);
-          }
-        },
-        onStepCancel: () {
-          if (_currentStep > 0) {
-            setState(() => _currentStep--);
-          }
-        },
-        controlsBuilder: (BuildContext context, ControlsDetails details) {
-          final isLastStep = _currentStep == 2;
-          return Padding(
-            padding: const EdgeInsets.only(top: 16.0),
-            child: Row(
-              children: [
-                ElevatedButton(
-                  onPressed: details.onStepContinue,
-                  child: Text(isLastStep ? settings.translate('start_capture') : settings.translate('next')),
-                ),
-                const SizedBox(width: 8),
-                if (_currentStep > 0)
-                  TextButton(
-                    onPressed: details.onStepCancel,
-                    child: Text(settings.translate('back'), style: const TextStyle(color: Colors.white70)),
+    return PopScope(
+      canPop: !_isStarting,
+      child: Scaffold(
+        appBar: AppBar(title: AppText(settings.translate('new_project'))),
+        body: AbsorbPointer(
+          absorbing: _isStarting,
+          child: Stepper(
+            currentStep: _currentStep,
+            onStepContinue: () {
+              if (_currentStep == 0 && _nameController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: AppText('Please enter a project name.'),
                   ),
-              ],
-            ),
-          );
-        },
-        steps: [
-          // Step 1: Project Name & Mode
-          Step(
-            title: Text(settings.translate('project_name'), style: const TextStyle(color: Colors.white)),
-            content: Column(
-              children: [
-                TextFormField(
-                  controller: _nameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: settings.translate('enter_project_name'),
-                    border: const OutlineInputBorder(),
-                    hintText: 'e.g. Living Room Scan',
-                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                );
+                return;
+              }
+              if (_currentStep < 2) {
+                setState(() => _currentStep++);
+              } else {
+                // Final step: Create the project and navigate to capture session
+                _createProjectAndStart(context);
+              }
+            },
+            onStepCancel: () {
+              if (_currentStep > 0) {
+                setState(() => _currentStep--);
+              }
+            },
+            controlsBuilder: (BuildContext context, ControlsDetails details) {
+              final isLastStep = _currentStep == 2;
+              if (_isStarting) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 16.0),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 12),
+                      AppText(
+                        goPro.capture.progress,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                // Capture Mode Selection
-                Text(settings.translate('capture_mode'), style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Row(
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: Row(
                   children: [
-                    _buildModeChip('photo', Icons.photo_camera, settings.translate('single_frames')),
+                    ElevatedButton(
+                      onPressed: details.onStepContinue,
+                      child: AppText(
+                        isLastStep
+                            ? settings.translate('start_capture')
+                            : settings.translate('next'),
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    _buildModeChip('video', Icons.videocam, settings.translate('record_videos')),
+                    if (_currentStep > 0)
+                      TextButton(
+                        onPressed: details.onStepCancel,
+                        child: AppText(
+                          settings.translate('back'),
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  title: Text(settings.translate('smart_capture')),
-                  subtitle: Text(settings.translate('smart_capture_desc'), style: const TextStyle(color: Colors.white54)),
-                  value: _smartCapture,
-                  activeTrackColor: Theme.of(context).primaryColor,
-                  onChanged: (bool value) {
-                    setState(() => _smartCapture = value);
-                  },
+              );
+            },
+            steps: [
+              // Step 1: Project Name & Mode
+              Step(
+                title: AppText(
+                  settings.translate('project_name'),
+                  style: const TextStyle(color: Colors.white),
                 ),
-              ],
-            ),
-            isActive: _currentStep >= 0,
-          ),
-
-          // Step 2: Camera Settings
-          Step(
-            title: Text(settings.translate('camera_settings'), style: const TextStyle(color: Colors.white)),
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (connectedCams.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                content: Column(
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: settings.translate('enter_project_name'),
+                        border: const OutlineInputBorder(),
+                        hintText: 'e.g. Living Room Scan',
+                        hintStyle: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.3),
+                        ),
+                      ),
                     ),
-                    child: Row(
+                    const SizedBox(height: 16),
+                    // Capture Mode Selection
+                    AppText(
+                      settings.translate('capture_mode'),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
                       children: [
-                        const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                        _buildModeChip(
+                          'photo',
+                          Icons.photo_camera,
+                          settings.translate('single_frames'),
+                        ),
                         const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            settings.translate('no_cameras_warning'),
-                            style: const TextStyle(color: Colors.orange, fontSize: 13),
+                        _buildModeChip(
+                          'video',
+                          Icons.videocam,
+                          settings.translate('record_videos'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ListTile(
+                      leading: const Icon(Icons.info_outline),
+                      title: AppText(settings.translate('smart_capture')),
+                      subtitle: AppText(
+                        settings.translate('smart_capture_desc'),
+                      ),
+                    ),
+                  ],
+                ),
+                isActive: _currentStep >= 0,
+              ),
+
+              // Step 2: Camera Settings
+              Step(
+                title: AppText(
+                  settings.translate('camera_settings'),
+                  style: const TextStyle(color: Colors.white),
+                ),
+                content: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (connectedCams.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.orange.withValues(alpha: 0.3),
                           ),
                         ),
-                      ],
-                    ),
-                  )
-                else
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.check_circle, color: Theme.of(context).primaryColor, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${connectedCams.length} camera${connectedCams.length > 1 ? 's' : ''} connected',
-                          style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_amber,
+                              color: Colors.orange,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: AppText(
+                                settings.translate('no_cameras_warning'),
+                                style: const TextStyle(
+                                  color: Colors.orange,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                // ─── Preset Selector ───
-                Text(settings.translate('select_preset'),
-                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 42,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: settings.allPresets.map((preset) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ActionChip(
-                          avatar: Text(preset.icon, style: const TextStyle(fontSize: 14)),
-                          label: Text(preset.name, style: const TextStyle(fontSize: 11)),
-                          backgroundColor: Colors.white.withValues(alpha: 0.06),
-                          side: BorderSide(color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
-                          onPressed: () {
-                            setState(() {
-                              _resolution = preset.settings['Resolution'] ?? _resolution;
-                              _fps = preset.settings['FPS'] ?? _fps;
-                              _lens = preset.settings['Lens'] ?? _lens;
-                              _isoMax = preset.settings['ISO Max'] ?? _isoMax;
-                              _shutter = preset.settings['Shutter'] ?? _shutter;
-                              _whiteBalance = preset.settings['White Balance'] ?? _whiteBalance;
-                              _bitrate = preset.settings['Bitrate'] ?? _bitrate;
-                            });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('${preset.icon} ${preset.name} applied'),
-                                  backgroundColor: Theme.of(context).primaryColor, duration: const Duration(seconds: 1)),
-                            );
-                          },
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      );
-                    }).toList(),
-                  ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: Theme.of(context).primaryColor,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            AppText(
+                              '${connectedCams.length} camera${connectedCams.length > 1 ? 's' : ''} connected',
+                              style: TextStyle(
+                                color: Theme.of(context).primaryColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    // ─── Preset Selector ───
+                    AppText(
+                      settings.translate('select_preset'),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 42,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: settings.allPresets.map((preset) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ActionChip(
+                              avatar: AppText(
+                                preset.icon,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              label: AppText(
+                                preset.name,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.06,
+                              ),
+                              side: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).primaryColor.withValues(alpha: 0.3),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _captureMode =
+                                      preset.settings['Mode'] ?? _captureMode;
+                                  _photoFormat =
+                                      preset.settings['Photo Format'] ??
+                                      preset.settings['Photo Output'] ??
+                                      _photoFormat;
+                                  _interval =
+                                      preset.settings['Interval'] ?? _interval;
+                                  _resolution =
+                                      preset.settings['Resolution'] ??
+                                      _resolution;
+                                  _guidance = preset.settings['Guidance'] ?? '';
+                                  _orientation =
+                                      preset.settings['Orientation'] ??
+                                      'Portrait';
+                                  _targetIso =
+                                      preset.settings['Target ISO'] ?? '100';
+                                  _fps = preset.settings['FPS'] ?? _fps;
+                                  _lens = preset.settings['Lens'] ?? _lens;
+                                  _isoMax =
+                                      preset.settings['ISO Max'] ?? _isoMax;
+                                  _shutter =
+                                      preset.settings['Shutter'] ?? _shutter;
+                                  _whiteBalance =
+                                      preset.settings['White Balance'] ??
+                                      _whiteBalance;
+                                  _bitrate =
+                                      preset.settings['Bitrate'] ?? _bitrate;
+                                });
+                                if (preset.settings['Labs Recipe'] ==
+                                    'daylight') {
+                                  showGaussianLabsQr(context);
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: AppText(
+                                      '${preset.icon} ${preset.name} selected; camera confirmation pending',
+                                    ),
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).primaryColor,
+                                    duration: const Duration(seconds: 1),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_captureMode == 'photo') ...[
+                      _buildSettingDropdown('Photo Mode', _photoFormat, [
+                        'Standard',
+                        'SuperPhoto',
+                        'RAW',
+                        'HDR',
+                      ], (v) => setState(() => _photoFormat = v)),
+                      _buildSettingDropdown('Interval', _interval, [
+                        'Off',
+                        '0.5s',
+                        '1s',
+                        '2s',
+                        '5s',
+                      ], (v) => setState(() => _interval = v)),
+                      _buildSettingDropdown(
+                        'Lens',
+                        _lens == 'SuperView' ? 'Wide' : _lens,
+                        ['Linear', 'Wide'],
+                        (v) => setState(() => _lens = v),
+                      ),
+                    ],
+                    if (_captureMode == 'video') ...[
+                      _buildSettingDropdown('Resolution', _resolution, [
+                        '1080p',
+                        '2.7K',
+                        '4K',
+                        '5.3K',
+                      ], (v) => setState(() => _resolution = v)),
+                      _buildSettingDropdown('FPS', _fps, [
+                        '24',
+                        '30',
+                        '60',
+                        '120',
+                      ], (v) => setState(() => _fps = v)),
+                      _buildSettingDropdown('Bitrate', _bitrate, [
+                        'Standard',
+                        'High',
+                      ], (v) => setState(() => _bitrate = v)),
+                      _buildSettingDropdown('Lens', _lens, [
+                        'Linear',
+                        'Wide',
+                        'SuperView',
+                      ], (v) => setState(() => _lens = v)),
+                    ],
+                    AppText(
+                      '$_guidance\nMount: $_orientation. Target ISO: $_targetIso (set on every camera). ISO, shutter, white balance and physical mounting are not BLE-verified. Linear is a digital crop and still needs calibration.',
+                      style: TextStyle(color: Colors.orange, fontSize: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildSettingDropdown('Target ISO (manual)', _isoMax, [
+                      'Camera preset',
+                      '100',
+                      '200',
+                      '400',
+                      '800',
+                      '1600',
+                    ], (v) => setState(() => _isoMax = v)),
+                    _buildSettingDropdown('Target shutter (manual)', _shutter, [
+                      'Camera preset',
+                      'Auto',
+                      ...(_captureMode == 'photo'
+                          ? ['1/125', '1/250', '1/500', '1/1000']
+                          : ['1/60', '1/120', '1/240', '1/480']),
+                    ], (v) => setState(() => _shutter = v)),
+                    _buildSettingDropdown('Target white balance (manual)', _whiteBalance, [
+                      'Camera preset',
+                      'Auto',
+                      '3200K',
+                      '4000K',
+                      '5500K',
+                      '6500K',
+                    ], (v) => setState(() => _whiteBalance = v)),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _buildSettingDropdown('Resolution', _resolution, ['1080p', '2.7K', '4K', '5.3K'], (v) => setState(() => _resolution = v)),
-                _buildSettingDropdown('FPS', _fps, ['24', '30', '60', '120'], (v) => setState(() => _fps = v)),
-                _buildSettingDropdown('Lens', _lens, ['Linear', 'Wide', 'SuperView'], (v) => setState(() => _lens = v)),
-                _buildSettingDropdown('ISO Max', _isoMax, ['100', '200', '400', '800', '1600'], (v) => setState(() => _isoMax = v)),
-                _buildSettingDropdown('Shutter', _shutter, ['Auto', '1/60', '1/120', '1/240', '1/480'], (v) => setState(() => _shutter = v)),
-                _buildSettingDropdown('White Balance', _whiteBalance, ['Auto', '3200K', '4000K', '5500K', '6500K'], (v) => setState(() => _whiteBalance = v)),
-                _buildSettingDropdown('Bitrate', _bitrate, ['Standard', 'High'], (v) => setState(() => _bitrate = v)),
-              ],
-            ),
-            isActive: _currentStep >= 1,
-          ),
+                isActive: _currentStep >= 1,
+              ),
 
-          // Step 3: Summary & Start
-          Step(
-            title: Text(settings.translate('summary'), style: const TextStyle(color: Colors.white)),
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSummaryRow(Icons.folder, 'Project', _nameController.text.isEmpty ? '—' : _nameController.text),
-                _buildSummaryRow(Icons.camera, 'Mode', _captureMode == 'photo' ? 'Single Frames' : 'Video'),
-                _buildSummaryRow(Icons.aspect_ratio, 'Resolution', _resolution),
-                _buildSummaryRow(Icons.speed, 'FPS', _fps),
-                _buildSummaryRow(Icons.camera_alt, 'Lens', _lens),
-                _buildSummaryRow(Icons.linked_camera, 'Cameras', '${connectedCams.length} connected'),
-                const SizedBox(height: 12),
-                Text(
-                  settings.translate('start_capture_hint'),
-                  style: const TextStyle(color: Colors.white54, fontSize: 13),
-                  textAlign: TextAlign.center,
+              // Step 3: Summary & Start
+              Step(
+                title: AppText(
+                  settings.translate('summary'),
+                  style: const TextStyle(color: Colors.white),
                 ),
-              ],
-            ),
-            isActive: _currentStep >= 2,
+                content: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSummaryRow(
+                      Icons.folder,
+                      'Project',
+                      _nameController.text.isEmpty ? '—' : _nameController.text,
+                    ),
+                    _buildSummaryRow(
+                      Icons.camera,
+                      'Mode',
+                      _captureMode == 'photo'
+                          ? 'Photo ($_photoFormat)'
+                          : 'Video',
+                    ),
+                    if (_captureMode == 'photo') ...[
+                      _buildSummaryRow(Icons.image, 'Format', _photoFormat),
+                      _buildSummaryRow(Icons.timer, 'Interval', _interval),
+                    ],
+                    if (_captureMode == 'video') ...[
+                      _buildSummaryRow(
+                        Icons.aspect_ratio,
+                        'Resolution',
+                        _resolution,
+                      ),
+                      _buildSummaryRow(Icons.speed, 'FPS', _fps),
+                    ],
+                    _buildSummaryRow(Icons.camera_alt, 'Lens', _lens),
+                    _buildSummaryRow(Icons.exposure, 'Target ISO (manual)', _isoMax == 'Camera preset' ? _targetIso : _isoMax),
+                    _buildSummaryRow(Icons.stay_current_portrait, 'Mounting (manual)', _orientation),
+                    const AppText('Check exposure and mounting on every camera. The app verifies only supported BLE settings.'),
+                    _buildSummaryRow(
+                      Icons.linked_camera,
+                      'Cameras',
+                      '${connectedCams.length} connected',
+                    ),
+                    const SizedBox(height: 12),
+                    AppText(
+                      settings.translate('start_capture_hint'),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 13,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+                isActive: _currentStep >= 2,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -262,18 +509,34 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected ? Theme.of(context).primaryColor.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.05),
+            color: isSelected
+                ? Theme.of(context).primaryColor.withValues(alpha: 0.2)
+                : Colors.white.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? Theme.of(context).primaryColor : Colors.white24,
+              color: isSelected
+                  ? Theme.of(context).primaryColor
+                  : Colors.white24,
               width: isSelected ? 2 : 1,
             ),
           ),
           child: Column(
             children: [
-              Icon(icon, color: isSelected ? Theme.of(context).primaryColor : Colors.white54, size: 28),
+              Icon(
+                icon,
+                color: isSelected
+                    ? Theme.of(context).primaryColor
+                    : Colors.white54,
+                size: 28,
+              ),
               const SizedBox(height: 4),
-              Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.white54, fontSize: 12)),
+              AppText(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white54,
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
         ),
@@ -281,14 +544,22 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
     );
   }
 
-  Widget _buildSettingDropdown(String label, String currentValue, List<String> options, ValueChanged<String> onChanged) {
+  Widget _buildSettingDropdown(
+    String label,
+    String currentValue,
+    List<String> options,
+    ValueChanged<String> onChanged,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           SizedBox(
             width: 110,
-            child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            child: AppText(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
           ),
           Expanded(
             child: Container(
@@ -300,12 +571,18 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: currentValue,
+                  value: options.contains(currentValue)
+                      ? currentValue
+                      : options.first,
                   dropdownColor: const Color(0xFF2A2A2A),
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   isExpanded: true,
-                  items: options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
-                  onChanged: (v) { if (v != null) onChanged(v); },
+                  items: options
+                      .map((o) => DropdownMenuItem(value: o, child: AppText(o)))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) onChanged(v);
+                  },
                 ),
               ),
             ),
@@ -322,95 +599,93 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
         children: [
           Icon(icon, size: 18, color: Theme.of(context).primaryColor),
           const SizedBox(width: 8),
-          Text('$label: ', style: const TextStyle(color: Colors.white54, fontSize: 14)),
-          Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+          AppText(
+            '$label: ',
+            style: const TextStyle(color: Colors.white54, fontSize: 14),
+          ),
+          AppText(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
         ],
       ),
     );
   }
 
+  bool _isStarting = false;
+
   Future<void> _createProjectAndStart(BuildContext context) async {
+    if (_isStarting) return;
+    setState(() => _isStarting = true);
+
     final projectService = context.read<ProjectService>();
     final goPro = context.read<GoProService>();
 
-    final cameraSettings = {
-      'Resolution': _resolution,
-      'FPS': _fps,
-      'Lens': _lens,
-      'ISO Max': _isoMax,
-      'Shutter': _shutter,
-      'White Balance': _whiteBalance,
-      'Bitrate': _bitrate,
-    };
+    final cameraSettings = <String, String>{};
 
-    // Show a loading indicator dialog with the logo
+    if (_captureMode == 'photo') {
+      cameraSettings['Photo Format'] = _photoFormat;
+      cameraSettings['Interval'] = _interval;
+      cameraSettings['Lens'] = _lens == 'SuperView' ? 'Wide' : _lens;
+    } else {
+      cameraSettings['Resolution'] = _resolution;
+      cameraSettings['FPS'] = _fps;
+      cameraSettings['Bitrate'] = _bitrate;
+      cameraSettings['Lens'] = _lens;
+    }
+
+    // Shared settings
+    cameraSettings['Orientation'] = _orientation;
+    cameraSettings['Target ISO'] = _isoMax == 'Camera preset' ? _targetIso : _isoMax;
+    cameraSettings['Guidance'] = _guidance;
+    cameraSettings['ISO Max'] = 'Camera preset';
+    cameraSettings['Shutter'] = 'Camera preset';
+    cameraSettings['Target Shutter'] = _shutter;
+    cameraSettings['White Balance'] = 'Camera preset';
+    cameraSettings['Target White Balance'] = _whiteBalance;
+
+    // Show a loading indicator
     if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return Dialog(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Load the custom logo
-                Image.asset(
-                  'assets/logo.png',
-                  height: 100,
-                  errorBuilder: (context, error, stackTrace) {
-                    // Fallback if the image isn't placed yet
-                    return const Icon(Icons.camera, size: 80, color: Colors.white);
-                  },
-                ),
-                const SizedBox(height: 24),
-                const CircularProgressIndicator(color: Colors.greenAccent),
-                const SizedBox(height: 16),
-                const Text(
-                  'Applying settings to cameras...',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Please wait',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ],
-            ),
-          );
-        },
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: AppText('Syncing camera modes & settings...'),
+          duration: Duration(seconds: 2),
+        ),
       );
     }
 
-    // 1. Switch all cameras to the correct mode (Photo or Video)
-    await goPro.setAllCamerasMode(_captureMode);
-
-    // 2. Apply all individual settings via BLE
-    await goPro.applySettingsToAll(cameraSettings);
-
-    // 3. Update local state
-    for (final cam in goPro.devices.where((d) => d.isConnected)) {
-      goPro.updateCameraSettings(cam.id, cameraSettings);
-    }
-
-    final project = await projectService.createProject(
-      _nameController.text.trim(),
-      captureMode: _captureMode,
-      smartCapture: _smartCapture,
-      cameraSettings: cameraSettings,
-    );
-
-    // Dismiss the loading dialog
-    if (mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-
-    if (mounted) {
+    try {
+      await goPro.prepareCapture(_captureMode, cameraSettings);
+      if (!mounted) return;
+      final project = await projectService.createProject(
+        _nameController.text.trim(),
+        captureMode: _captureMode,
+        smartCapture: _smartCapture,
+        cameraSettings: cameraSettings,
+      );
+      if (!context.mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => CaptureSessionScreen(project: project)),
+        MaterialPageRoute(
+          builder: (context) =>
+              CaptureSessionScreen(project: project, camerasPrepared: true),
+        ),
       );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: AppText('Project not started: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      if (mounted) setState(() => _isStarting = false);
     }
   }
 }

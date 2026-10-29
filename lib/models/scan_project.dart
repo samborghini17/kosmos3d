@@ -19,15 +19,21 @@ class ScanProject {
     this.smartCapture = false,
     this.captureCount = 0,
     Map<String, String>? cameraSettings,
-  }) : cameraSettings = cameraSettings ?? {
-    'Resolution': '4K',
-    'FPS': '30',
-    'Lens': 'Linear',
-    'ISO Max': '400',
-    'Shutter': 'Auto',
-    'White Balance': '5500K',
-    'Bitrate': 'High',
-  };
+  }) : cameraSettings =
+           cameraSettings ??
+           {
+             'Resolution': '4K',
+             'FPS': '30',
+             'Lens': 'Linear',
+             'Photo Format': 'Standard Photo',
+             'Interval': '1s',
+             'Orientation': 'Portrait',
+             'Target ISO': '100',
+             'ISO Max': 'Camera preset',
+             'Shutter': 'Camera preset',
+             'White Balance': 'Camera preset',
+             'Bitrate': 'High',
+           };
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -48,11 +54,12 @@ class ScanProject {
     captureMode: json['captureMode'] as String? ?? 'photo',
     smartCapture: json['smartCapture'] as bool? ?? false,
     captureCount: json['captureCount'] as int? ?? 0,
-    cameraSettings: json['cameraSettings'] != null 
+    cameraSettings: json['cameraSettings'] != null
         ? Map<String, String>.from(json['cameraSettings'] as Map)
         : null,
   );
 
   String toJsonString() => jsonEncode(toJson());
-  static ScanProject fromJsonString(String s) => ScanProject.fromJson(jsonDecode(s) as Map<String, dynamic>);
+  static ScanProject fromJsonString(String s) =>
+      ScanProject.fromJson(jsonDecode(s) as Map<String, dynamic>);
 }

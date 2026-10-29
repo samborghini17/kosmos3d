@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../l10n/app_text.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../widgets/glass_card.dart';
@@ -8,6 +8,10 @@ import '../services/cloud_storage_service.dart';
 import '../services/rig_geometry_service.dart';
 import '../services/lidar_service.dart';
 import '../services/gopro_service.dart';
+import '../services/upload_service.dart';
+import '../services/system_settings_service.dart';
+import '../widgets/gopro_media_transfer_dialog.dart';
+import '../widgets/camera_live_monitor.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -20,11 +24,17 @@ class SettingsScreen extends StatelessWidget {
     final lidar = context.watch<LidarService>();
 
     return Scaffold(
-      appBar: AppBar(title: Text(settings.translate('settings'))),
+      appBar: AppBar(title: AppText(settings.translate('settings'))),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
+            SwitchListTile(
+              title: AppText(settings.translate('coverage_viewer')),
+              subtitle: AppText(settings.translate('coverage_viewer_desc')),
+              value: settings.coverageVisualizer,
+              onChanged: settings.setCoverageVisualizer,
+            ),
             // ─── APPEARANCE ─────────────────────────────
             _buildSectionHeader(context, 'Appearance'),
             GlassCard(
@@ -32,33 +42,61 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 children: [
                   ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
                     leading: const Icon(Icons.brightness_6, size: 24),
-                    title: const Text('Theme', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(settings.themeMode == ThemeMode.system ? 'System Default'
-                        : settings.themeMode == ThemeMode.dark ? 'Dark' : 'Light'),
-                    trailing: SegmentedButton<ThemeMode>(
-                      segments: const [
-                        ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.phone_android, size: 16)),
-                        ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 16)),
-                        ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode, size: 16)),
-                      ],
-                      selected: {settings.themeMode},
-                      onSelectionChanged: (v) => settings.setThemeMode(v.first),
-                      style: ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    title: const AppText(
+                      'Theme',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: SegmentedButton<ThemeMode>(
+                        segments: const [
+                          ButtonSegment(
+                            value: ThemeMode.system,
+                            icon: Icon(Icons.phone_android, size: 16),
+                          ),
+                          ButtonSegment(
+                            value: ThemeMode.dark,
+                            icon: Icon(Icons.dark_mode, size: 16),
+                          ),
+                          ButtonSegment(
+                            value: ThemeMode.light,
+                            icon: Icon(Icons.light_mode, size: 16),
+                          ),
+                        ],
+                        selected: {settings.themeMode},
+                        onSelectionChanged: (v) =>
+                            settings.setThemeMode(v.first),
+                        style: ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                       ),
                     ),
                   ),
                   ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    leading: Text(settings.currentLanguage == 'en' ? '🇬🇧' : '🇩🇪', style: const TextStyle(fontSize: 24)),
-                    title: Text(settings.translate('language'), style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(settings.currentLanguage == 'en' ? 'English' : 'Deutsch'),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    leading: AppText(
+                      settings.currentLanguage == 'en' ? '🇬🇧' : '🇩🇪',
+                      style: const TextStyle(fontSize: 24),
+                    ),
+                    title: AppText(
+                      settings.translate('language'),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: AppText(
+                      settings.currentLanguage == 'en' ? 'English' : 'Deutsch',
+                    ),
                     trailing: Switch(
                       value: settings.currentLanguage == 'de',
-                      activeColor: Theme.of(context).primaryColor,
+                      activeThumbColor: Theme.of(context).primaryColor,
                       onChanged: (_) => settings.toggleLanguage(),
                     ),
                   ),
@@ -69,29 +107,81 @@ class SettingsScreen extends StatelessWidget {
 
             // ─── DEVICE MANAGER ─────────────────────────
             _buildSectionHeader(context, settings.translate('device_manager')),
-            _buildSettingCard(context,
+            _buildSettingCard(
+              context,
               title: settings.translate('device_manager'),
               subtitle: settings.translate('manage_gopros'),
               icon: Icons.camera_alt,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DeviceManagerScreen())),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DeviceManagerScreen()),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildSettingCard(
+              context,
+              title: 'Live Camera Monitor',
+              subtitle: 'Multi-view live stream of all connected cameras',
+              icon: Icons.videocam,
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => Padding(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom,
+                      top: 40, // padding for safe area
+                    ),
+                    child: CameraLiveMonitor(
+                      onClose: () => Navigator.pop(context),
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 16),
 
             // ─── SCANNING PRESETS ───────────────────────
-            _buildSectionHeader(context, settings.translate('scanning_presets')),
-            ...settings.allPresets.map((preset) => GlassCard(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                leading: Text(preset.icon, style: const TextStyle(fontSize: 24)),
-                title: Text(preset.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                subtitle: Text('${preset.settings['Resolution']} · ${preset.settings['FPS']}fps · ${preset.settings['Lens']}',
-                    style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.5), fontSize: 12)),
-                trailing: const Icon(Icons.chevron_right, size: 20),
-                onTap: () => _showPresetDetail(context, preset, settings),
+            _buildSectionHeader(
+              context,
+              settings.translate('scanning_presets'),
+            ),
+            ...settings.allPresets.map(
+              (preset) => GlassCard(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  leading: AppText(
+                    preset.icon,
+                    style: const TextStyle(fontSize: 24),
+                  ),
+                  title: AppText(
+                    preset.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  subtitle: AppText(
+                    '${preset.settings['Mode'] == 'photo' ? preset.settings['Photo Format'] : '${preset.settings['Resolution']} · ${preset.settings['FPS']}fps'} · ${preset.settings['Lens']}',
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.color?.withValues(alpha: 0.5),
+                      fontSize: 12,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => _showPresetDetail(context, preset, settings),
+                ),
               ),
-            )),
-            _buildSettingCard(context,
+            ),
+            _buildSettingCard(
+              context,
               title: settings.translate('create_preset'),
               subtitle: settings.translate('create_preset_desc'),
               icon: Icons.add_circle_outline,
@@ -105,54 +195,125 @@ class SettingsScreen extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 12),
               child: Column(
                 children: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: const Icon(Icons.timer_outlined, size: 22),
+                    title: const AppText(
+                      'Capture Interval',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: AppText(
+                      settings.captureInterval == 'Off'
+                          ? 'Manual trigger only'
+                          : 'Continuous timelapse',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    trailing: DropdownButton<String>(
+                      value: settings.captureInterval,
+                      underline: const SizedBox(),
+                      items: const [
+                        DropdownMenuItem(value: 'Off', child: AppText('Off')),
+                        DropdownMenuItem(value: '0.5s', child: AppText('0.5s')),
+                        DropdownMenuItem(value: '1s', child: AppText('1s')),
+                        DropdownMenuItem(value: '2s', child: AppText('2s')),
+                        DropdownMenuItem(value: '5s', child: AppText('5s')),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) settings.setCaptureInterval(v);
+                      },
+                    ),
+                  ),
                   SwitchListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     secondary: const Icon(Icons.vibration, size: 22),
-                    title: const Text('Haptic Feedback', style: TextStyle(fontSize: 14)),
-                    subtitle: const Text('Vibrate on capture events', style: TextStyle(fontSize: 12)),
+                    title: const AppText(
+                      'Haptic Feedback',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: const AppText(
+                      'Vibrate on capture events',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     value: settings.hapticFeedback,
-                    activeColor: Theme.of(context).primaryColor,
+                    activeThumbColor: Theme.of(context).primaryColor,
                     onChanged: (v) => settings.setHapticFeedback(v),
                   ),
                   SwitchListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     secondary: const Icon(Icons.speed, size: 22),
-                    title: const Text('Barometer (Altitude)', style: TextStyle(fontSize: 14)),
-                    subtitle: const Text('Record pressure sensor for elevation', style: TextStyle(fontSize: 12)),
+                    title: const AppText(
+                      'Barometer (Altitude)',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: const AppText(
+                      'Record pressure sensor for elevation',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     value: settings.recordBarometer,
-                    activeColor: Theme.of(context).primaryColor,
+                    activeThumbColor: Theme.of(context).primaryColor,
                     onChanged: (v) => settings.setRecordBarometer(v),
                   ),
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     leading: const Icon(Icons.sensors, size: 22),
-                    title: const Text('IMU Sample Rate', style: TextStyle(fontSize: 14)),
-                    subtitle: Text('${settings.sensorRate}ms (${(1000 / settings.sensorRate).round()} Hz)', style: const TextStyle(fontSize: 12)),
+                    title: const AppText(
+                      'IMU Sample Rate',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: AppText(
+                      '${settings.sensorRate}ms (${(1000 / settings.sensorRate).round()} Hz)',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     trailing: DropdownButton<int>(
                       value: settings.sensorRate,
                       underline: const SizedBox(),
                       items: const [
-                        DropdownMenuItem(value: 20, child: Text('20ms (50Hz)')),
-                        DropdownMenuItem(value: 50, child: Text('50ms (20Hz)')),
-                        DropdownMenuItem(value: 100, child: Text('100ms (10Hz)')),
+                        DropdownMenuItem(
+                          value: 20,
+                          child: AppText('20ms (50Hz)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 50,
+                          child: AppText('50ms (20Hz)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 100,
+                          child: AppText('100ms (10Hz)'),
+                        ),
                       ],
-                      onChanged: (v) { if (v != null) settings.setSensorRate(v); },
+                      onChanged: (v) {
+                        if (v != null) settings.setSensorRate(v);
+                      },
                     ),
                   ),
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     leading: const Icon(Icons.gps_fixed, size: 22),
-                    title: const Text('GPS Poll Rate', style: TextStyle(fontSize: 14)),
-                    subtitle: Text('Every ${settings.gpsRate}s', style: const TextStyle(fontSize: 12)),
+                    title: const AppText(
+                      'GPS Poll Rate',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: AppText(
+                      'Every ${settings.gpsRate}s',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     trailing: DropdownButton<int>(
                       value: settings.gpsRate,
                       underline: const SizedBox(),
                       items: const [
-                        DropdownMenuItem(value: 1, child: Text('1s (fast)')),
-                        DropdownMenuItem(value: 2, child: Text('2s (normal)')),
-                        DropdownMenuItem(value: 5, child: Text('5s (battery)')),
+                        DropdownMenuItem(value: 1, child: AppText('1s (fast)')),
+                        DropdownMenuItem(
+                          value: 2,
+                          child: AppText('2s (normal)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 5,
+                          child: AppText('5s (battery)'),
+                        ),
                       ],
-                      onChanged: (v) { if (v != null) settings.setGpsRate(v); },
+                      onChanged: (v) {
+                        if (v != null) settings.setGpsRate(v);
+                      },
                     ),
                   ),
                 ],
@@ -167,20 +328,46 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 children: [
                   ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
                     leading: const Icon(Icons.text_fields, size: 22),
-                    title: const Text('Naming Template', style: TextStyle(fontSize: 14)),
-                    subtitle: Text(rig.namingTemplate, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                    title: const AppText(
+                      'Naming Template',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: AppText(
+                      rig.namingTemplate,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
                     trailing: const Icon(Icons.edit, size: 18),
                     onTap: () => _showNamingDialog(context, rig),
                   ),
                   ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
                     leading: const Icon(Icons.view_in_ar, size: 22),
-                    title: Text('Camera Positions (${rig.cameras.length})', style: const TextStyle(fontSize: 14)),
-                    subtitle: const Text('Define rig offsets for each camera', style: TextStyle(fontSize: 12)),
+                    title: AppText(
+                      'Camera Positions (${rig.cameras.length})',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    subtitle: const AppText(
+                      'Define rig offsets for each camera',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     trailing: const Icon(Icons.chevron_right, size: 20),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RigLayoutScreen())),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const RigLayoutScreen(),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -189,173 +376,208 @@ class SettingsScreen extends StatelessWidget {
               GlassCard(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  leading: Icon(Icons.radar, size: 28, color: Theme.of(context).primaryColor),
-                  title: const Text('LiDAR Scanner', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  subtitle: Text(lidar.isCapturing ? 'Capturing (${lidar.depthFrameCount} frames)' : 'Available — auto-captures with photos'),
-                  trailing: Icon(Icons.check_circle, color: Theme.of(context).primaryColor, size: 20),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  leading: Icon(
+                    Icons.radar,
+                    size: 28,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                  title: const AppText(
+                    'LiDAR Scanner',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                  subtitle: AppText(
+                    lidar.isCapturing
+                        ? 'Capturing (${lidar.depthFrameCount} frames)'
+                        : 'Available — auto-captures with photos',
+                  ),
+                  trailing: Icon(
+                    Icons.check_circle,
+                    color: Theme.of(context).primaryColor,
+                    size: 20,
+                  ),
                 ),
               ),
             ],
             const SizedBox(height: 16),
-            _buildSectionHeader(context, settings.translate('cloud_storage')),
-            _buildSettingCard(context,
-              title: 'Backblaze B2',
-              subtitle: cloud.isConfigured ? settings.translate('cloud_configured') : settings.translate('cloud_not_configured'),
-              icon: Icons.cloud,
-              onTap: () => showDialog(context: context, builder: (_) => const CloudStorageDialog()),
-            ),
-            GlassCard(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: SwitchListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                secondary: const Icon(Icons.cloud_upload, size: 22),
-                title: const Text('Auto-Upload', style: TextStyle(fontSize: 14)),
-                subtitle: const Text('Upload to B2 after each session', style: TextStyle(fontSize: 12)),
-                value: settings.autoUpload,
-                activeColor: Theme.of(context).primaryColor,
-                onChanged: cloud.isConfigured ? (v) => settings.setAutoUpload(v) : null,
-              ),
-            ),
-            const SizedBox(height: 16),
 
-            // ─── FUTURE: GS PROCESSING ──────────────────
-            _buildSectionHeader(context, 'Gaussian Splat Processing'),
-            GlassCard(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                leading: const Icon(Icons.cloud_sync, size: 28),
-                title: Text('Processing Server', style: TextStyle(fontWeight: FontWeight.w600,
-                    color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.3))),
-                subtitle: Text('Coming soon — COLMAP / GS processing',
-                    style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.2))),
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text('ROADMAP', style: TextStyle(
-                      color: Theme.of(context).primaryColor.withValues(alpha: 0.3), fontSize: 10, letterSpacing: 1)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // ─── BLUETOOTH & CONNECTIVITY ────────────────
-            _buildSectionHeader(context, 'Bluetooth & Connectivity'),
+            // ─── NETWORK & HOTSPOT ──────────────────────
+            _buildSectionHeader(context, 'Network & Tethering'),
             GlassCard(
               margin: const EdgeInsets.only(bottom: 12),
               child: Column(
                 children: [
-                  SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    secondary: const Icon(Icons.bluetooth_connected, size: 22),
-                    title: const Text('Auto-Reconnect', style: TextStyle(fontSize: 14)),
-                    subtitle: const Text('Reconnect to lost cameras automatically', style: TextStyle(fontSize: 12)),
-                    value: settings.autoReconnect,
-                    activeColor: Theme.of(context).primaryColor,
-                    onChanged: (v) => settings.setAutoReconnect(v),
-                  ),
                   ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    leading: const Icon(Icons.timer, size: 22),
-                    title: const Text('Scan Duration', style: TextStyle(fontSize: 14)),
-                    subtitle: Text('${settings.scanTimeout}s per scan', style: const TextStyle(fontSize: 12)),
-                    trailing: DropdownButton<int>(
-                      value: settings.scanTimeout,
-                      underline: const SizedBox(),
-                      items: const [
-                        DropdownMenuItem(value: 3, child: Text('3s (fast)')),
-                        DropdownMenuItem(value: 5, child: Text('5s (normal)')),
-                        DropdownMenuItem(value: 10, child: Text('10s (thorough)')),
-                        DropdownMenuItem(value: 15, child: Text('15s (deep)')),
-                      ],
-                      onChanged: (v) { if (v != null) settings.setScanTimeout(v); },
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
                     ),
-                  ),
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     leading: Icon(
-                      Platform.isIOS ? Icons.phone_iphone : Icons.phone_android,
-                      size: 22,
-                    ),
-                    title: const Text('Platform', style: TextStyle(fontSize: 14)),
-                    subtitle: Text(
-                      Platform.isIOS
-                          ? 'iOS — Bluetooth permission managed by system'
-                          : 'Android — Location required for BLE scan',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    trailing: Icon(
-                      Icons.check_circle,
+                      Icons.wifi_tethering,
+                      size: 28,
                       color: Theme.of(context).primaryColor,
-                      size: 18,
                     ),
+                    title: const AppText(
+                      'Camera networks',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: AppText(
+                      'Direct Wi-Fi, passwords and hotspot compatibility',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.settings, size: 20),
+                          tooltip: 'Open Device Hotspot Settings',
+                          onPressed: () =>
+                              SystemSettingsService.openHotspotSettings(),
+                        ),
+                        const Icon(Icons.chevron_right, size: 20),
+                      ],
+                    ),
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) => const HotspotDialog(),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Colors.white10),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    leading: Icon(
+                      Icons.download_for_offline,
+                      size: 26,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    title: const AppText(
+                      'Import all camera originals',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: const AppText(
+                      'Join cameras one at a time; optionally export to Photos / Gallery',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: () => GoProMediaTransferDialog.show(context),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
 
-            // ─── ADVANCED / DEVELOPER ────────────────────
-            _buildSectionHeader(context, 'Advanced'),
+            _buildSectionHeader(context, settings.translate('cloud_storage')),
+            _buildSettingCard(
+              context,
+              title: 'Backblaze B2',
+              subtitle: cloud.isConfigured
+                  ? settings.translate('cloud_configured')
+                  : settings.translate('cloud_not_configured'),
+              icon: Icons.cloud,
+              onTap: () => showDialog(
+                context: context,
+                builder: (_) => const CloudStorageDialog(),
+              ),
+            ),
+            GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                secondary: const Icon(Icons.cloud_upload, size: 22),
+                title: const AppText(
+                  'Auto-Upload (B2 Cloud)',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: const AppText(
+                  'Upload to Backblaze B2 after each session',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: settings.cloudAutoUpload,
+                activeThumbColor: Theme.of(context).primaryColor,
+                onChanged: cloud.isConfigured
+                    ? (v) => settings.setCloudAutoUpload(v)
+                    : null,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ─── GAUSSIAN SPLAT PROCESSING SERVER ──────────
+            _buildSectionHeader(context, 'Gaussian Splat Processing'),
             GlassCard(
               margin: const EdgeInsets.only(bottom: 12),
               child: Column(
                 children: [
-                  SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    secondary: const Icon(Icons.screen_lock_portrait, size: 22),
-                    title: const Text('Stay Awake', style: TextStyle(fontSize: 14)),
-                    subtitle: const Text('Prevent phone sleep during scans', style: TextStyle(fontSize: 12)),
-                    value: settings.stayAwake,
-                    activeColor: Theme.of(context).primaryColor,
-                    onChanged: (v) => settings.setStayAwake(v),
-                  ),
-                  SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    secondary: const Icon(Icons.bug_report, size: 22),
-                    title: const Text('Debug Logging', style: TextStyle(fontSize: 14)),
-                    subtitle: const Text('Verbose BLE & sensor output in console', style: TextStyle(fontSize: 12)),
-                    value: settings.debugLogging,
-                    activeColor: Theme.of(context).primaryColor,
-                    onChanged: (v) => settings.setDebugLogging(v),
-                  ),
                   ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    leading: const Icon(Icons.restore, size: 22, color: Colors.orange),
-                    title: const Text('Reset All Settings', style: TextStyle(fontSize: 14, color: Colors.orange)),
-                    subtitle: const Text('Restore factory defaults', style: TextStyle(fontSize: 12)),
-                    onTap: () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          backgroundColor: const Color(0xFF1E1E1E),
-                          title: const Text('⚠️ Reset Settings?', style: TextStyle(color: Colors.white)),
-                          content: const Text(
-                            'This will reset all settings to defaults, remove custom presets, and clear saved credentials.',
-                            style: TextStyle(color: Colors.orange),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    leading: const Icon(Icons.cloud_sync, size: 28),
+                    title: const AppText(
+                      'Processing Server',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: AppText(
+                      settings.serverUrl.isNotEmpty
+                          ? settings.serverUrl
+                          : 'Configure remote COLMAP / 3DGS server',
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.settings, size: 20),
+                          tooltip: 'Configure Server',
+                          onPressed: () => showDialog(
+                            context: context,
+                            builder: (_) => const _ServerConfigDialog(),
                           ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Reset', style: TextStyle(color: Colors.redAccent)),
-                            ),
-                          ],
                         ),
-                      );
-                      if (confirmed == true) {
-                        await settings.resetAllSettings();
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('All settings reset to defaults'), backgroundColor: Colors.orange),
-                          );
-                        }
-                      }
-                    },
+                      ],
+                    ),
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) => const _ServerConfigDialog(),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 2,
+                    ),
+                    secondary: const Icon(
+                      Icons.cloud_upload_outlined,
+                      size: 22,
+                    ),
+                    title: const AppText(
+                      'Auto-Upload Captures',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: const AppText(
+                      'Automatically upload session photos to server for 3D reconstruction',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: settings.serverAutoUpload,
+                    onChanged: (val) => settings.setServerAutoUpload(val),
                   ),
                 ],
               ),
@@ -369,27 +591,48 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 children: [
                   const ListTile(
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
                     leading: Icon(Icons.info_outline, size: 22),
-                    title: Text('KOSMOS 3D', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('v1.0.0 • Open Source (MIT)'),
+                    title: AppText(
+                      'KOSMOS 3D',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: AppText('v1.0.0 • Open Source (MIT)'),
                   ),
                   ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
                     leading: const Icon(Icons.school, size: 22),
-                    title: const Text('KIO Kreativ Institut', style: TextStyle(fontSize: 14)),
-                    subtitle: const Text('Gaussian Splatting Rig Controller', style: TextStyle(fontSize: 12)),
+                    title: const AppText(
+                      'KIO Kreativ Institut',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: const AppText(
+                      'Gaussian Splatting Rig Controller',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     trailing: const Icon(Icons.open_in_new, size: 16),
                     onTap: () {},
                   ),
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    leading: Icon(
-                      Platform.isIOS ? Icons.phone_iphone : Icons.phone_android,
-                      size: 22,
+                  const ListTile(
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
                     ),
-                    title: const Text('Supported Sensors', style: TextStyle(fontSize: 14)),
-                    subtitle: const Text('Accelerometer • Gyroscope • Magnetometer\nBarometer • GPS • Compass • LiDAR (if available)', style: TextStyle(fontSize: 12)),
+                    leading: Icon(Icons.phone_iphone, size: 22),
+                    title: AppText(
+                      'Supported Sensors',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: AppText(
+                      'Accelerometer • Gyroscope • Magnetometer\nBarometer • GPS • Compass',
+                      style: TextStyle(fontSize: 12),
+                    ),
                   ),
                 ],
               ),
@@ -400,52 +643,82 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  void _showPresetDetail(BuildContext context, CameraPreset preset, SettingsProvider settings) {
+  void _showPresetDetail(
+    BuildContext context,
+    CameraPreset preset,
+    SettingsProvider settings,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
         title: Row(
           children: [
-            Text(preset.icon, style: const TextStyle(fontSize: 24)),
+            AppText(preset.icon, style: const TextStyle(fontSize: 24)),
             const SizedBox(width: 8),
-            Text(preset.name, style: const TextStyle(color: Colors.white, fontSize: 16)),
+            AppText(
+              preset.name,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: preset.settings.entries.map((e) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(e.key, style: const TextStyle(color: Colors.white54, fontSize: 13)),
-                Text(e.value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-              ],
-            ),
-          )).toList(),
+          children: preset.settings.entries
+              .map(
+                (e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      AppText(
+                        e.key,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                        ),
+                      ),
+                      AppText(
+                        e.value,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
+            child: const AppText('Close'),
           ),
           ElevatedButton(
             onPressed: () {
               settings.setDefaultSettings(preset.settings);
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${preset.name} set as default'), backgroundColor: Theme.of(context).primaryColor),
+                SnackBar(
+                  content: AppText('${preset.name} set as default'),
+                  backgroundColor: Theme.of(context).primaryColor,
+                ),
               );
             },
-            child: const Text('Set as Default'),
+            child: const AppText('Set as Default'),
           ),
         ],
       ),
     );
   }
 
-  void _showCreatePresetDialog(BuildContext context, SettingsProvider settings) {
+  void _showCreatePresetDialog(
+    BuildContext context,
+    SettingsProvider settings,
+  ) {
     final nameCtrl = TextEditingController();
     String resolution = '4K', fps = '30', lens = 'Linear';
     String isoMax = '400', shutter = 'Auto', wb = '5500K', bitrate = 'High';
@@ -455,7 +728,10 @@ class SettingsScreen extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           backgroundColor: const Color(0xFF1A1A1A),
-          title: const Text('Create Preset', style: TextStyle(color: Colors.white)),
+          title: const AppText(
+            'Create Preset',
+            style: TextStyle(color: Colors.white),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -463,34 +739,87 @@ class SettingsScreen extends StatelessWidget {
                 TextField(
                   controller: nameCtrl,
                   style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(labelText: 'Preset Name', labelStyle: TextStyle(color: Colors.white54)),
+                  decoration: const InputDecoration(
+                    labelText: 'Preset Name',
+                    labelStyle: TextStyle(color: Colors.white54),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                _dropdownRow('Resolution', resolution, ['1080p', '2.7K', '4K', '5.3K'], (v) => setState(() => resolution = v)),
-                _dropdownRow('FPS', fps, ['24', '30', '60', '120'], (v) => setState(() => fps = v)),
-                _dropdownRow('Lens', lens, ['Linear', 'Wide', 'SuperView'], (v) => setState(() => lens = v)),
-                _dropdownRow('ISO Max', isoMax, ['100', '200', '400', '800', '1600'], (v) => setState(() => isoMax = v)),
-                _dropdownRow('Shutter', shutter, ['Auto', '1/60', '1/120', '1/240', '1/480'], (v) => setState(() => shutter = v)),
-                _dropdownRow('White Balance', wb, ['Auto', '3200K', '4000K', '5500K', '6500K'], (v) => setState(() => wb = v)),
-                _dropdownRow('Bitrate', bitrate, ['Standard', 'High'], (v) => setState(() => bitrate = v)),
+                _dropdownRow('Resolution', resolution, [
+                  '1080p',
+                  '2.7K',
+                  '4K',
+                  '5.3K',
+                ], (v) => setState(() => resolution = v)),
+                _dropdownRow('FPS', fps, [
+                  '24',
+                  '30',
+                  '60',
+                  '120',
+                ], (v) => setState(() => fps = v)),
+                _dropdownRow('Lens', lens, [
+                  'Linear',
+                  'Wide',
+                  'SuperView',
+                ], (v) => setState(() => lens = v)),
+                _dropdownRow('Target ISO (manual)', isoMax, [
+                  '100',
+                  '200',
+                  '400',
+                  '800',
+                  '1600',
+                ], (v) => setState(() => isoMax = v)),
+                _dropdownRow('Target shutter (manual)', shutter, [
+                  'Auto',
+                  '1/60',
+                  '1/120',
+                  '1/240',
+                  '1/480',
+                ], (v) => setState(() => shutter = v)),
+                _dropdownRow('Target white balance (manual)', wb, [
+                  'Auto',
+                  '3200K',
+                  '4000K',
+                  '5500K',
+                  '6500K',
+                ], (v) => setState(() => wb = v)),
+                _dropdownRow('Bitrate', bitrate, [
+                  'Standard',
+                  'High',
+                ], (v) => setState(() => bitrate = v)),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const AppText('Cancel'),
+            ),
             ElevatedButton(
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty) return;
-                settings.addCustomPreset(CameraPreset(
-                  name: nameCtrl.text.trim(), icon: '⭐',
-                  settings: {
-                    'Resolution': resolution, 'FPS': fps, 'Lens': lens,
-                    'ISO Max': isoMax, 'Shutter': shutter, 'White Balance': wb, 'Bitrate': bitrate,
-                  },
-                ));
+                settings.addCustomPreset(
+                  CameraPreset(
+                    name: nameCtrl.text.trim(),
+                    icon: '⭐',
+                    settings: {
+                      'Resolution': resolution,
+                      'FPS': fps,
+                      'Lens': lens,
+                      'Mode': 'video',
+                      'ISO Max': 'Camera preset',
+                      'Target ISO': isoMax,
+                      'Shutter': 'Camera preset',
+                      'Target Shutter': shutter,
+                      'White Balance': 'Camera preset',
+                      'Target White Balance': wb,
+                      'Bitrate': bitrate,
+                    },
+                  ),
+                );
                 Navigator.pop(ctx);
               },
-              child: const Text('Save'),
+              child: const AppText('Save'),
             ),
           ],
         ),
@@ -498,19 +827,36 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _dropdownRow(String label, String value, List<String> options, ValueChanged<String> onChanged) {
+  Widget _dropdownRow(
+    String label,
+    String value,
+    List<String> options,
+    ValueChanged<String> onChanged,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          SizedBox(width: 90, child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12))),
+          SizedBox(
+            width: 90,
+            child: AppText(
+              label,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ),
           Expanded(
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: value, dropdownColor: const Color(0xFF2E2E2E), isExpanded: true,
+                value: value,
+                dropdownColor: const Color(0xFF2E2E2E),
+                isExpanded: true,
                 style: const TextStyle(color: Colors.white, fontSize: 13),
-                items: options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
-                onChanged: (v) { if (v != null) onChanged(v); },
+                items: options
+                    .map((o) => DropdownMenuItem(value: o, child: AppText(o)))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) onChanged(v);
+                },
               ),
             ),
           ),
@@ -522,20 +868,33 @@ class SettingsScreen extends StatelessWidget {
   Widget _buildSectionHeader(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0, left: 4.0),
-      child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(
-        color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold,
-      )),
+      child: AppText(
+        title,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          color: Theme.of(context).primaryColor,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
-  Widget _buildSettingCard(BuildContext context, {required String title, required String subtitle, required IconData icon, required VoidCallback onTap}) {
+  Widget _buildSettingCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
     return GlassCard(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Icon(icon, size: 28),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(subtitle),
+        title: AppText(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: AppText(subtitle),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
       ),
@@ -547,27 +906,47 @@ class SettingsScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('File Naming Template'),
+        title: const AppText('File Naming Template'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Template')),
+            TextField(
+              controller: ctrl,
+              decoration: const InputDecoration(labelText: 'Template'),
+            ),
             const SizedBox(height: 12),
-            Text('Available variables:', style: TextStyle(color: Theme.of(ctx).primaryColor, fontSize: 12, fontWeight: FontWeight.bold)),
+            AppText(
+              'Available variables:',
+              style: TextStyle(
+                color: Theme.of(ctx).primaryColor,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 4),
-            const Text('{project} — Project name\n{camera} — Camera label\n{index} — Capture number (0001)\n{date} — Date (2026-04-30)\n{time} — Time (143025)',
-                style: TextStyle(fontSize: 11, height: 1.6)),
+            const AppText(
+              '{project} — Project name\n{camera} — Camera label\n{index} — Capture number (0001)\n{date} — Date (2026-04-30)\n{time} — Time (143025)',
+              style: TextStyle(fontSize: 11, height: 1.6),
+            ),
             const SizedBox(height: 8),
-            Text('Preview: ${rig.generateFileName(projectName: "MyScan", cameraLabel: "CAM1", index: 1)}',
-                style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+            AppText(
+              'Preview: ${rig.generateFileName(projectName: "MyScan", cameraLabel: "CAM1", index: 1)}',
+              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+            ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const AppText('Cancel'),
+          ),
           ElevatedButton(
-            onPressed: () { rig.setNamingTemplate(ctrl.text.trim()); Navigator.pop(ctx); },
-            child: const Text('Save'),
+            onPressed: () {
+              rig.setNamingTemplate(ctrl.text.trim());
+              Navigator.pop(ctx);
+            },
+            child: const AppText('Save'),
           ),
         ],
       ),
@@ -585,7 +964,7 @@ class RigLayoutScreen extends StatelessWidget {
     final goPro = context.watch<GoProService>();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Rig Camera Layout')),
+      appBar: AppBar(title: const AppText('Rig Camera Layout')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -595,9 +974,11 @@ class RigLayoutScreen extends StatelessWidget {
             decoration: BoxDecoration(
               color: Theme.of(context).primaryColor.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+              ),
             ),
-            child: const Text(
+            child: const AppText(
               'Define each camera\'s position relative to the phone mount (center of rig).\n'
               'X = left/right, Y = up/down, Z = forward/back (meters).\n'
               'Rotation: yaw, pitch, roll (degrees).',
@@ -605,12 +986,14 @@ class RigLayoutScreen extends StatelessWidget {
             ),
           ),
           // Auto-add connected cameras that aren't in rig yet
-          if (goPro.devices.where((d) => d.isConnected).any((d) => !rig.cameras.any((c) => c.cameraId == d.id)))
+          if (goPro.devices
+              .where((d) => d.isConnected)
+              .any((d) => !rig.cameras.any((c) => c.cameraId == d.id)))
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.add),
-                label: const Text('Add Connected Cameras'),
+                label: const AppText('Add Connected Cameras'),
                 onPressed: () {
                   for (final cam in goPro.devices.where((d) => d.isConnected)) {
                     rig.addCamera(cam.id, cam.name);
@@ -618,71 +1001,170 @@ class RigLayoutScreen extends StatelessWidget {
                 },
               ),
             ),
-          ...rig.cameras.map((cam) => GlassCard(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ExpansionTile(
-              leading: const Icon(Icons.videocam),
-              title: Text(cam.label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              subtitle: Text('Offset: (${cam.offsetX}, ${cam.offsetY}, ${cam.offsetZ})m', style: const TextStyle(fontSize: 11)),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Column(
-                    children: [
-                      _offsetRow(context, 'Label', cam.label, (v) => rig.updateCamera(cam.cameraId, label: v)),
-                      _numRow(context, 'X (left/right)', cam.offsetX, (v) => rig.updateCamera(cam.cameraId, x: v)),
-                      _numRow(context, 'Y (up/down)', cam.offsetY, (v) => rig.updateCamera(cam.cameraId, y: v)),
-                      _numRow(context, 'Z (fwd/back)', cam.offsetZ, (v) => rig.updateCamera(cam.cameraId, z: v)),
-                      _numRow(context, 'Yaw°', cam.rotYaw, (v) => rig.updateCamera(cam.cameraId, yaw: v)),
-                      _numRow(context, 'Pitch°', cam.rotPitch, (v) => rig.updateCamera(cam.cameraId, pitch: v)),
-                      _numRow(context, 'Roll°', cam.rotRoll, (v) => rig.updateCamera(cam.cameraId, roll: v)),
-                      const SizedBox(height: 8),
-                      TextButton.icon(
-                        icon: const Icon(Icons.delete, color: Colors.redAccent, size: 16),
-                        label: const Text('Remove', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
-                        onPressed: () => rig.removeCamera(cam.cameraId),
-                      ),
-                    ],
+          ...rig.cameras.map(
+            (cam) => GlassCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ExpansionTile(
+                leading: const Icon(Icons.videocam),
+                title: AppText(
+                  cam.label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
-              ],
+                subtitle: AppText(
+                  'Offset: (${cam.offsetX}, ${cam.offsetY}, ${cam.offsetZ})m',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      children: [
+                        _offsetRow(
+                          context,
+                          'Label',
+                          cam.label,
+                          (v) => rig.updateCamera(cam.cameraId, label: v),
+                        ),
+                        _numRow(
+                          context,
+                          'X (left/right)',
+                          cam.offsetX,
+                          (v) => rig.updateCamera(cam.cameraId, x: v),
+                        ),
+                        _numRow(
+                          context,
+                          'Y (up/down)',
+                          cam.offsetY,
+                          (v) => rig.updateCamera(cam.cameraId, y: v),
+                        ),
+                        _numRow(
+                          context,
+                          'Z (fwd/back)',
+                          cam.offsetZ,
+                          (v) => rig.updateCamera(cam.cameraId, z: v),
+                        ),
+                        _numRow(
+                          context,
+                          'Yaw°',
+                          cam.rotYaw,
+                          (v) => rig.updateCamera(cam.cameraId, yaw: v),
+                        ),
+                        _numRow(
+                          context,
+                          'Pitch°',
+                          cam.rotPitch,
+                          (v) => rig.updateCamera(cam.cameraId, pitch: v),
+                        ),
+                        _numRow(
+                          context,
+                          'Roll°',
+                          cam.rotRoll,
+                          (v) => rig.updateCamera(cam.cameraId, roll: v),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          icon: const Icon(
+                            Icons.delete,
+                            color: Colors.redAccent,
+                            size: 16,
+                          ),
+                          label: const AppText(
+                            'Remove',
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 12,
+                            ),
+                          ),
+                          onPressed: () => rig.removeCamera(cam.cameraId),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          )),
+          ),
         ],
       ),
     );
   }
 
-  Widget _offsetRow(BuildContext context, String label, String value, ValueChanged<String> onChanged) {
+  Widget _offsetRow(
+    BuildContext context,
+    String label,
+    String value,
+    ValueChanged<String> onChanged,
+  ) {
     final ctrl = TextEditingController(text: value);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          SizedBox(width: 90, child: Text(label, style: const TextStyle(fontSize: 12))),
-          Expanded(child: TextField(
-            controller: ctrl, style: const TextStyle(fontSize: 13),
-            decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
-            onSubmitted: onChanged,
-          )),
+          SizedBox(
+            width: 90,
+            child: AppText(label, style: const TextStyle(fontSize: 12)),
+          ),
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+              ),
+              onSubmitted: onChanged,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _numRow(BuildContext context, String label, double value, ValueChanged<double> onChanged) {
+  Widget _numRow(
+    BuildContext context,
+    String label,
+    double value,
+    ValueChanged<double> onChanged,
+  ) {
     final ctrl = TextEditingController(text: value.toStringAsFixed(3));
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          SizedBox(width: 90, child: Text(label, style: const TextStyle(fontSize: 12))),
-          Expanded(child: TextField(
-            controller: ctrl, style: const TextStyle(fontSize: 13),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-            decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
-            onSubmitted: (v) { final d = double.tryParse(v); if (d != null) onChanged(d); },
-          )),
+          SizedBox(
+            width: 90,
+            child: AppText(label, style: const TextStyle(fontSize: 12)),
+          ),
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              style: const TextStyle(fontSize: 13),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+                signed: true,
+              ),
+              decoration: const InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+              ),
+              onSubmitted: (v) {
+                final d = double.tryParse(v);
+                if (d != null) onChanged(d);
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -702,7 +1184,9 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
   final _keyIdCtrl = TextEditingController();
   final _appKeyCtrl = TextEditingController();
   final _bucketCtrl = TextEditingController();
-  final _endpointCtrl = TextEditingController(text: 's3.eu-central-003.backblazeb2.com');
+  final _endpointCtrl = TextEditingController(
+    text: 's3.eu-central-003.backblazeb2.com',
+  );
   final _regionCtrl = TextEditingController(text: 'eu-central-003');
   bool _obscureKey = true;
   bool _isTesting = false;
@@ -721,13 +1205,17 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
     setState(() {
       _keyIdCtrl.text = creds['keyId'] ?? '';
       _bucketCtrl.text = creds['bucketName'] ?? '';
-      _endpointCtrl.text = creds['endpoint'] ?? 's3.eu-central-003.backblazeb2.com';
+      _endpointCtrl.text =
+          creds['endpoint'] ?? 's3.eu-central-003.backblazeb2.com';
       _regionCtrl.text = creds['region'] ?? 'eu-central-003';
     });
   }
 
   Future<void> _testConnection() async {
-    setState(() { _isTesting = true; _testResult = null; });
+    setState(() {
+      _isTesting = true;
+      _testResult = null;
+    });
     final cloud = context.read<CloudStorageService>();
     await cloud.saveCredentials(
       keyId: _keyIdCtrl.text.trim(),
@@ -739,7 +1227,9 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
     final ok = await cloud.testConnection();
     setState(() {
       _isTesting = false;
-      _testResult = ok ? '✅ Connection successful!' : '❌ ${cloud.lastError ?? "Failed"}';
+      _testResult = ok
+          ? '✅ Connection successful!'
+          : '❌ ${cloud.lastError ?? "Failed"}';
     });
   }
 
@@ -757,36 +1247,58 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
     if (mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: const Text('Cloud storage configured'), backgroundColor: Theme.of(context).primaryColor),
+        SnackBar(
+          content: const AppText('Cloud storage configured'),
+          backgroundColor: Theme.of(context).primaryColor,
+        ),
       );
     }
   }
 
   @override
   void dispose() {
-    _keyIdCtrl.dispose(); _appKeyCtrl.dispose(); _bucketCtrl.dispose();
-    _endpointCtrl.dispose(); _regionCtrl.dispose();
+    _keyIdCtrl.dispose();
+    _appKeyCtrl.dispose();
+    _bucketCtrl.dispose();
+    _endpointCtrl.dispose();
+    _regionCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF1A1A1A),
-      title: const Text('☁️ Backblaze B2 Cloud Storage', style: TextStyle(color: Colors.white, fontSize: 16)),
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      title: AppText(
+        '☁️ Backblaze B2 Cloud Storage',
+        style: TextStyle(
+          color: Theme.of(context).textTheme.bodyLarge?.color,
+          fontSize: 16,
+        ),
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Enter your B2 Application Key credentials.\nUse a restricted key, not the master key!',
-                style: TextStyle(color: Colors.orange, fontSize: 12)),
+            const AppText(
+              'Enter your B2 Application Key credentials.\nUse a restricted key, not the master key!',
+              style: TextStyle(color: Colors.orange, fontSize: 12),
+            ),
             const SizedBox(height: 16),
             _field('Key ID', _keyIdCtrl, Icons.key),
             const SizedBox(height: 10),
-            _field('Application Key', _appKeyCtrl, Icons.lock, obscure: _obscureKey,
+            _field(
+              'Application Key',
+              _appKeyCtrl,
+              Icons.lock,
+              obscure: _obscureKey,
               suffix: IconButton(
-                icon: Icon(_obscureKey ? Icons.visibility_off : Icons.visibility, color: Colors.white38, size: 18),
+                icon: Icon(
+                  _obscureKey ? Icons.visibility_off : Icons.visibility,
+                  color: Colors.white38,
+                  size: 18,
+                ),
                 onPressed: () => setState(() => _obscureKey = !_obscureKey),
               ),
             ),
@@ -798,10 +1310,15 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
             _field('Region', _regionCtrl, Icons.map),
             if (_testResult != null) ...[
               const SizedBox(height: 12),
-              Text(_testResult!, style: TextStyle(
-                color: _testResult!.startsWith('✅') ? Colors.greenAccent : Colors.redAccent,
-                fontSize: 12,
-              )),
+              AppText(
+                _testResult!,
+                style: TextStyle(
+                  color: _testResult!.startsWith('✅')
+                      ? Colors.greenAccent
+                      : Colors.redAccent,
+                  fontSize: 12,
+                ),
+              ),
             ],
           ],
         ),
@@ -809,40 +1326,345 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          child: const AppText(
+            'Cancel',
+            style: TextStyle(color: Colors.white54),
+          ),
         ),
         TextButton(
           onPressed: _isTesting ? null : _testConnection,
           child: _isTesting
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Test'),
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const AppText('Test'),
         ),
         ElevatedButton(
           onPressed: _isSaving ? null : _save,
           child: _isSaving
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Save'),
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const AppText('Save'),
         ),
       ],
     );
   }
 
-  Widget _field(String label, TextEditingController ctrl, IconData icon, {bool obscure = false, Widget? suffix}) {
+  Widget _field(
+    String label,
+    TextEditingController ctrl,
+    IconData icon, {
+    bool obscure = false,
+    Widget? suffix,
+  }) {
     return TextField(
-      controller: ctrl, obscureText: obscure,
-      style: const TextStyle(color: Colors.white, fontSize: 13),
+      controller: ctrl,
+      obscureText: obscure,
+      style: TextStyle(
+        color: Theme.of(context).textTheme.bodyLarge?.color,
+        fontSize: 13,
+      ),
       decoration: InputDecoration(
-        labelText: label, labelStyle: const TextStyle(color: Colors.white54, fontSize: 12),
-        prefixIcon: Icon(icon, color: Colors.white38, size: 18),
+        labelText: label,
+        labelStyle: TextStyle(
+          color: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.color?.withValues(alpha: 0.5),
+          fontSize: 12,
+        ),
+        prefixIcon: Icon(
+          icon,
+          color: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.color?.withValues(alpha: 0.4),
+          size: 18,
+        ),
         suffixIcon: suffix,
-        enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white24), borderRadius: BorderRadius.circular(8)),
-        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Theme.of(context).primaryColor), borderRadius: BorderRadius.circular(8)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(
+            color:
+                Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.color?.withValues(alpha: 0.2) ??
+                Colors.grey,
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: Theme.of(context).primaryColor),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         isDense: true,
       ),
     );
   }
 }
 
+// ─── HOTSPOT DIALOG ──────────────────────────────────────────
 
+class HotspotDialog extends StatelessWidget {
+  const HotspotDialog({super.key});
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const AppText('Camera networks'),
+    content: const SingleChildScrollView(
+      child: AppText(
+        'The easiest supported route is Import all: the phone joins each GoPro Wi-Fi in turn, reads its SD card and stores the originals. The app reads the password over Bluetooth.\n\n'
+        'HERO12/13 can use a shared hotspot through COHN, but this requires camera-specific provisioning, HTTPS credentials and certificate verification. That route is not implemented in this build. Older models use direct Wi-Fi.\n\n'
+        'After import, return to your normal network to upload. Keeping the phone hotspot on may prevent it from joining a camera network.',
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const AppText('Close'),
+      ),
+      FilledButton(
+        onPressed: () {
+          Navigator.pop(context);
+          GoProMediaTransferDialog.show(context);
+        },
+        child: const AppText('Import originals'),
+      ),
+    ],
+  );
+}
 
+class _ServerConfigDialog extends StatefulWidget {
+  const _ServerConfigDialog();
+
+  @override
+  State<_ServerConfigDialog> createState() => _ServerConfigDialogState();
+}
+
+class _ServerConfigDialogState extends State<_ServerConfigDialog> {
+  late final TextEditingController _urlCtrl;
+  late final TextEditingController _userCtrl;
+  late final TextEditingController _passCtrl;
+  late final TextEditingController _apiKeyCtrl;
+  bool _testingConnection = false;
+  String? _testResult;
+  bool _isSuccess = false;
+  bool _obscurePass = true;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = context.read<SettingsProvider>();
+    _urlCtrl = TextEditingController(text: settings.serverUrl);
+    _userCtrl = TextEditingController(text: settings.serverUsername);
+    _passCtrl = TextEditingController(text: settings.serverPassword);
+    _apiKeyCtrl = TextEditingController(text: settings.serverApiKey);
+  }
+
+  @override
+  void dispose() {
+    _urlCtrl.dispose();
+    _userCtrl.dispose();
+    _passCtrl.dispose();
+    _apiKeyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _testConnection() async {
+    setState(() {
+      _testingConnection = true;
+      _testResult = null;
+    });
+
+    final settings = context.read<SettingsProvider>();
+    settings.setServerUrl(_urlCtrl.text.trim());
+    settings.setServerUsername(_userCtrl.text.trim());
+    settings.setServerPassword(_passCtrl.text.trim());
+    settings.setServerApiKey(_apiKeyCtrl.text.trim());
+
+    final upload = context.read<UploadService>();
+    final success = await upload.testConnection();
+
+    if (mounted) {
+      setState(() {
+        _testingConnection = false;
+        _isSuccess = success;
+        _testResult = success
+            ? '✓ Connected successfully!'
+            : '✗ Connection failed: ${upload.lastError ?? "Unreachable"}';
+      });
+    }
+  }
+
+  void _save() {
+    final settings = context.read<SettingsProvider>();
+    settings.setServerUrl(_urlCtrl.text.trim());
+    settings.setServerUsername(_userCtrl.text.trim());
+    settings.setServerPassword(_passCtrl.text.trim());
+    settings.setServerApiKey(_apiKeyCtrl.text.trim());
+
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const AppText('Server configuration saved'),
+        backgroundColor: Theme.of(context).primaryColor,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      title: Row(
+        children: [
+          Icon(Icons.cloud_sync, color: Theme.of(context).primaryColor),
+          const SizedBox(width: 8),
+          AppText(
+            'Processing Server',
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodyLarge?.color,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppText(
+              'Configure file uploads here. Reconstruction requires a separate processing service.',
+              style: TextStyle(
+                color: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            TextField(
+              controller: _urlCtrl,
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+                fontSize: 13,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Server URL',
+                hintText: 'https://files.example.org',
+                prefixIcon: Icon(Icons.link, size: 20),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _apiKeyCtrl,
+              obscureText: true,
+              enableSuggestions: false,
+              autocorrect: false,
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+                fontSize: 13,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'API Key (Optional)',
+                prefixIcon: Icon(Icons.key, size: 20),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _userCtrl,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodyLarge?.color,
+                      fontSize: 13,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      prefixIcon: Icon(Icons.person, size: 18),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _passCtrl,
+                    obscureText: _obscurePass,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodyLarge?.color,
+                      fontSize: 13,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock, size: 18),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePass
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          size: 18,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscurePass = !_obscurePass),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Test status
+            if (_testResult != null)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _isSuccess
+                      ? Colors.green.withValues(alpha: 0.15)
+                      : Colors.red.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _isSuccess ? Colors.green : Colors.red,
+                    width: 0.5,
+                  ),
+                ),
+                child: AppText(
+                  _testResult!,
+                  style: TextStyle(
+                    color: _isSuccess ? Colors.greenAccent : Colors.redAccent,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        OutlinedButton.icon(
+          onPressed: _testingConnection ? null : _testConnection,
+          icon: _testingConnection
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.wifi_find, size: 16),
+          label: const AppText('Test', style: TextStyle(fontSize: 12)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const AppText('Cancel'),
+        ),
+        ElevatedButton(onPressed: _save, child: const AppText('Save')),
+      ],
+    );
+  }
+}

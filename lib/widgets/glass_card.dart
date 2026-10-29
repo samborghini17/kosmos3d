@@ -1,40 +1,27 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 
+/// Opaque content surfaces preserve legibility; glass is reserved for navigation.
 class GlassCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry margin;
-
   const GlassCard({
     super.key,
     required this.child,
     this.padding = EdgeInsets.zero,
-    this.margin = const EdgeInsets.only(bottom: 16),
+    this.margin = const EdgeInsets.only(bottom: 12),
   });
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: margin,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15), // Stronger aeroglass effect
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardTheme.color?.withValues(alpha: 0.2), // More transparent for better glass effect
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.1), // Subtle white border for specular highlight
-                width: 1.5,
-              ),
-            ),
-            child: child,
-          ),
-        ),
+  Widget build(BuildContext context) => Container(
+    margin: margin,
+    padding: padding,
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.07),
       ),
-    );
-  }
+    ),
+    child: child,
+  );
 }

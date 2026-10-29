@@ -2,6 +2,10 @@
 class AppTranslations {
   static const Map<String, Map<String, String>> _localizedValues = {
     'en': {
+      'coverage_viewer': 'Point cloud / coverage viewer',
+      'coverage_viewer_desc':
+          'Measured LiDAR where available; otherwise GPS and orientation.',
+      'coverage_disabled': 'Coverage viewer disabled in Settings',
       'app_title': 'KOSMOS 3D',
       'device_manager': 'Device Manager',
       'manage_gopros': 'Manage connected cameras',
@@ -28,8 +32,9 @@ class AppTranslations {
       'project_settings': 'Project Settings',
       'record_videos': 'Video',
       'single_frames': 'Photo',
-      'smart_capture': 'Smart Image Capture (AI)',
-      'smart_capture_desc': 'AI-assisted triggering for optimal coverage',
+      'smart_capture': 'Capture guidance',
+      'smart_capture_desc':
+          'Rule-based movement and heading hints. No AI, image analysis or automatic coverage detection. Use the interval to automate capture.',
       'camera_settings': 'Camera Settings',
       'current_cameras': 'Current Cameras: @count connected',
       'configure': 'Configure',
@@ -47,17 +52,20 @@ class AppTranslations {
       'no_projects': 'No projects yet',
       'create_first_project': 'Tap + to create your first scan project',
       'capture_mode': 'Capture Mode',
-      'no_cameras_warning': 'No cameras connected. Go to Settings → Device Manager to pair your cameras.',
+      'no_cameras_warning':
+          'No cameras connected. Go to Settings → Device Manager to pair your cameras.',
       'summary': 'Summary',
       'start_capture': 'Start Capture',
-      'start_capture_hint': 'Settings will be applied to all connected cameras when the session starts.',
+      'start_capture_hint':
+          'Settings will be applied to all connected cameras when the session starts.',
       'captures': 'CAPTURES',
       'capture': 'CAPTURE',
       'end_session': 'End Session',
       'server_connection': 'Server Connection',
       'server_login': 'Server Login',
       'server_login_desc': 'Configure your processing server endpoint',
-      'server_config_desc': 'Enter your server details for remote Gaussian Splat processing. Leave empty if not using a server.',
+      'server_config_desc':
+          'Enter your server details for remote Gaussian Splat processing. Leave empty if not using a server.',
       'server_url': 'Server URL',
       'username': 'Username',
       'password': 'Password',
@@ -86,32 +94,34 @@ class AppTranslations {
       'upload_progress': 'Uploading...',
       'upload_complete': 'Upload complete!',
       'format_sd': 'Format SD Card',
-      'format_sd_confirm': 'Format SD cards on all connected cameras? This cannot be undone!',
+      'format_sd_confirm':
+          'Format SD cards on all connected cameras? This cannot be undone!',
       'power_off': 'Power Off',
       'disconnect': 'Disconnect',
       'preset_applied': 'Preset applied',
       'camera_rig': 'Camera Rig',
       'select_preset': 'Select Preset',
-      // Bluetooth & connectivity
-      'bluetooth_connectivity': 'Bluetooth & Connectivity',
-      'auto_reconnect': 'Auto-Reconnect',
-      'auto_reconnect_desc': 'Reconnect to lost cameras automatically',
-      'scan_duration': 'Scan Duration',
-      'platform_info_ios': 'iOS — Bluetooth permission managed by system',
-      'platform_info_android': 'Android — Location required for BLE scan',
-      // Advanced
-      'advanced': 'Advanced',
-      'stay_awake': 'Stay Awake',
-      'stay_awake_desc': 'Prevent phone sleep during scans',
-      'debug_logging': 'Debug Logging',
-      'debug_logging_desc': 'Verbose BLE & sensor output in console',
-      'reset_settings': 'Reset All Settings',
-      'reset_settings_desc': 'Restore factory defaults',
-      'reset_confirm': 'This will reset all settings to defaults, remove custom presets, and clear saved credentials.',
-      'bluetooth_off_ios': 'Make sure Bluetooth is turned on in Settings → Bluetooth.',
-      'location_off_android': 'Android requires Location / GPS to be ON for Bluetooth scanning.',
+      'hotspot_tethering': 'Hotspot Tethering & Wi-Fi Sync',
+      'hotspot_desc':
+          'Connect GoPros to phone hotspot to transfer images at high speed',
+      'hotspot_ssid': 'Hotspot SSID',
+      'hotspot_password': 'Hotspot Password',
+      'connect_all_hotspot': 'Connect All GoPros to Hotspot',
+      'sync_captures_hotspot': 'Sync Captures via Hotspot',
+      'discovering_cameras': 'Discovering GoPro IP addresses...',
+      'syncing_captures': 'Syncing captures...',
+      'sync_complete': 'Sync complete!',
+      'test_server_connection': 'Test Connection',
+      'server_connected': 'Server reachable ✓',
+      'server_unreachable': 'Server unreachable',
+      'auto_upload_server': 'Auto-Upload to Server',
+      'auto_upload_desc': 'Automatically upload captures when session ends',
     },
     'de': {
+      'coverage_viewer': 'Punktwolken- und Abdeckungsansicht',
+      'coverage_viewer_desc':
+          'Gemessene LiDAR-Daten, falls verfügbar; sonst GPS und Ausrichtung.',
+      'coverage_disabled': 'Abdeckungsansicht in den Einstellungen deaktiviert',
       'app_title': 'KOSMOS 3D',
       'device_manager': 'Geräte-Manager',
       'manage_gopros': 'Verbundene Kameras verwalten',
@@ -138,8 +148,9 @@ class AppTranslations {
       'project_settings': 'Projekteinstellungen',
       'record_videos': 'Video',
       'single_frames': 'Foto',
-      'smart_capture': 'Intelligente Bilderfassung (KI)',
-      'smart_capture_desc': 'KI-gestützte Auslösung für optimale Abdeckung',
+      'smart_capture': 'Aufnahmehinweise',
+      'smart_capture_desc':
+          'Regelbasierte Bewegungs- und Richtungshinweise. Keine KI, Bildanalyse oder automatische Erkennung der Oberflächenabdeckung. Das Intervall automatisiert die Aufnahme.',
       'camera_settings': 'Kameraeinstellungen',
       'current_cameras': 'Aktuelle Kameras: @count verbunden',
       'configure': 'Konfigurieren',
@@ -155,19 +166,23 @@ class AppTranslations {
       'close': 'Schließen',
       'connecting': 'Verbinden',
       'no_projects': 'Noch keine Projekte',
-      'create_first_project': 'Tippe +, um dein erstes Scan-Projekt zu erstellen',
+      'create_first_project':
+          'Tippe +, um dein erstes Scan-Projekt zu erstellen',
       'capture_mode': 'Aufnahmemodus',
-      'no_cameras_warning': 'Keine Kameras verbunden. Gehe zu Einstellungen → Geräte-Manager.',
+      'no_cameras_warning':
+          'Keine Kameras verbunden. Gehe zu Einstellungen → Geräte-Manager.',
       'summary': 'Zusammenfassung',
       'start_capture': 'Aufnahme starten',
-      'start_capture_hint': 'Einstellungen werden auf alle verbundenen Kameras übertragen.',
+      'start_capture_hint':
+          'Einstellungen werden auf alle verbundenen Kameras übertragen.',
       'captures': 'AUFNAHMEN',
       'capture': 'AUFNAHME',
       'end_session': 'Sitzung beenden',
       'server_connection': 'Serververbindung',
       'server_login': 'Server Login',
       'server_login_desc': 'Verarbeitungsserver konfigurieren',
-      'server_config_desc': 'Gib deine Serverdaten für die Remote-Verarbeitung von Gaussian Splats ein. Leer lassen, wenn kein Server verwendet wird.',
+      'server_config_desc':
+          'Gib deine Serverdaten für die Remote-Verarbeitung von Gaussian Splats ein. Leer lassen, wenn kein Server verwendet wird.',
       'server_url': 'Server URL',
       'username': 'Benutzername',
       'password': 'Passwort',
@@ -196,35 +211,48 @@ class AppTranslations {
       'upload_progress': 'Wird hochgeladen...',
       'upload_complete': 'Upload abgeschlossen!',
       'format_sd': 'SD-Karte formatieren',
-      'format_sd_confirm': 'SD-Karten aller Kameras formatieren? Dies kann nicht rückgängig gemacht werden!',
+      'format_sd_confirm':
+          'SD-Karten aller Kameras formatieren? Dies kann nicht rückgängig gemacht werden!',
       'power_off': 'Ausschalten',
       'disconnect': 'Trennen',
       'preset_applied': 'Vorlage angewendet',
       'camera_rig': 'Kamera-Rig',
       'select_preset': 'Vorlage auswählen',
-      // Bluetooth & Konnektivität
-      'bluetooth_connectivity': 'Bluetooth & Konnektivität',
-      'auto_reconnect': 'Automatisch verbinden',
-      'auto_reconnect_desc': 'Verlorene Kameras automatisch wiederherstellen',
-      'scan_duration': 'Scan-Dauer',
-      'platform_info_ios': 'iOS — Bluetooth-Berechtigung vom System verwaltet',
-      'platform_info_android': 'Android — Standort für BLE-Scan erforderlich',
-      // Erweitert
-      'advanced': 'Erweitert',
-      'stay_awake': 'Wach bleiben',
-      'stay_awake_desc': 'Telefon-Ruhemodus während Scans verhindern',
-      'debug_logging': 'Debug-Protokollierung',
-      'debug_logging_desc': 'Ausführliche BLE- & Sensor-Ausgabe in der Konsole',
-      'reset_settings': 'Alle Einstellungen zurücksetzen',
-      'reset_settings_desc': 'Werkseinstellungen wiederherstellen',
-      'reset_confirm': 'Alle Einstellungen werden auf Standardwerte zurückgesetzt, benutzerdefinierte Vorlagen entfernt und gespeicherte Zugangsdaten gelöscht.',
-      'bluetooth_off_ios': 'Stelle sicher, dass Bluetooth in Einstellungen → Bluetooth eingeschaltet ist.',
-      'location_off_android': 'Android erfordert Standort / GPS für Bluetooth-Scanning.',
-    }
+      'hotspot_tethering': 'Hotspot-Tethering & WLAN-Sync',
+      'hotspot_desc':
+          'GoPros mit Handy-Hotspot verbinden, um Bilder mit hoher Geschwindigkeit zu übertragen',
+      'hotspot_ssid': 'Hotspot SSID',
+      'hotspot_password': 'Hotspot Passwort',
+      'connect_all_hotspot': 'Alle GoPros mit Hotspot verbinden',
+      'sync_captures_hotspot': 'Bilder über Hotspot synchronisieren',
+      'discovering_cameras': 'GoPro IP-Adressen werden gesucht...',
+      'syncing_captures': 'Aufnahmen werden synchronisiert...',
+      'sync_complete': 'Synchronisierung abgeschlossen!',
+      'test_server_connection': 'Verbindung testen',
+      'server_connected': 'Server erreichbar ✓',
+      'server_unreachable': 'Server nicht erreichbar',
+      'auto_upload_server': 'Auto-Upload zum Server',
+      'auto_upload_desc':
+          'Aufnahmen nach Ende der Sitzung automatisch hochladen',
+    },
+    'es': {},
+    'fr': {},
+    'zh': {},
   };
 
   static String get(String langCode, String key) {
     // Default to EN if key not found in selected language
-    return _localizedValues[langCode]?[key] ?? _localizedValues['en']?[key] ?? key;
+    return _localizedValues[langCode]?[key] ??
+        _localizedValues['en']?[key] ??
+        key;
+  }
+
+  static String translateEnglishText(String text) {
+    for (final entry in _localizedValues['en']!.entries) {
+      if (entry.value == text) {
+        return _localizedValues['de']?[entry.key] ?? text;
+      }
+    }
+    return text;
   }
 }
