@@ -125,7 +125,6 @@ class _ExportScreenState extends State<ExportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = context.watch<SettingsProvider>();
     final primaryColor = Theme.of(context).primaryColor;
 
     return Scaffold(
