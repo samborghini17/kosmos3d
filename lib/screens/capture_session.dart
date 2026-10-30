@@ -294,7 +294,9 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen>
     final captures = await _projects.getProjectCapturesPath(_project.id);
     final event = <String, dynamic>{
       ..._trajectory.points.last.toJson(),
-      'event_type': 'acknowledged_shutter_dispatch',
+      'event_type': _goPro.capture.cameraTimer
+          ? 'estimated_camera_timer_shot'
+          : 'acknowledged_shutter_dispatch',
       'exposure_timestamp_verified': false,
       'camera_ids': _goPro.capture.cameraIds,
       'camera_dispatch_timing': _goPro.capture.lastDispatch,
@@ -726,9 +728,14 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen>
                       child: const AppText('Synchronize again'),
                     ),
                   if ((_project.cameraSettings['Interval'] ?? 'Off') != 'Off')
-                    const AppText(
-                      'Interval is a minimum delay after processing; timing may vary.',
-                      style: TextStyle(color: Colors.white54, fontSize: 11),
+                    AppText(
+                      _goPro.capture.cameraTimer
+                          ? 'Camera timers: photo times in the log are estimated from the interval.'
+                          : 'Interval is a minimum delay after processing; timing may vary.',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                      ),
                     ),
 
                   // ─── Bottom Info ───

@@ -70,6 +70,34 @@ void main() {
       expect(camera.writes.containsKey(172), isFalse);
     },
   );
+  test(
+    'camera timer arms the 1 s photo interval with the longest run',
+    () async {
+      final camera = FakeGoPro();
+      final service = GoProService.testConnection('a', camera.protocol);
+      addTearDown(service.dispose);
+      await service.applySettingsToDevice('a', {
+        'Photo Format': 'RAW',
+        'Lens': 'Linear',
+        'Interval': '1s',
+        'Interval Timing': 'Camera timer',
+      });
+      // 171=3 is 1 s; 172 offers no "off", so the longest run (2) is used.
+      expect(camera.writes, {125: 1, 171: 3, 172: 2, 122: 28});
+    },
+  );
+  test('camera timer rejects an interval the camera does not offer', () async {
+    final camera = FakeGoPro();
+    final service = GoProService.testConnection('a', camera.protocol);
+    addTearDown(service.dispose);
+    await expectLater(
+      service.applySettingsToDevice('a', {
+        'Interval': '2s',
+        'Interval Timing': 'Camera timer',
+      }),
+      throwsUnsupportedError,
+    );
+  });
   test('read-back mismatch fails the settings operation', () async {
     final camera = FakeGoPro()..mismatch = true;
     final service = GoProService.testConnection('a', camera.protocol);

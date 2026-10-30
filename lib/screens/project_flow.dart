@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/gopro_service.dart';
+import '../services/capture_coordinator.dart';
 import '../services/project_service.dart';
 
 import 'capture_session.dart';
@@ -24,6 +25,7 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
   // Camera settings for the project
   String _photoFormat = 'Standard Photo';
   String _interval = '1s';
+  String _intervalTiming = cameraTimerTiming;
   String _guidance =
       SettingsProvider.builtInPresets.first.settings['Guidance']!;
   String _orientation = 'Portrait';
@@ -48,6 +50,7 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
         _captureMode = defaults['Mode'] ?? 'photo';
         _photoFormat = defaults['Photo Format'] ?? 'Standard Photo';
         _interval = provider.captureInterval;
+        _intervalTiming = defaults['Interval Timing'] ?? cameraTimerTiming;
         _resolution = defaults['Resolution'] ?? '4K';
         _fps = defaults['FPS'] ?? '30';
         _lens = defaults['Lens'] ?? 'Linear';
@@ -392,6 +395,26 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
                         '2s',
                         '5s',
                       ], (v) => setState(() => _interval = v)),
+                      if (_interval != 'Off')
+                        _buildSettingDropdown(
+                          'Interval Timing',
+                          _intervalTiming,
+                          [cameraTimerTiming, appTiming],
+                          (v) => setState(() => _intervalTiming = v),
+                        ),
+                      if (_interval != 'Off')
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: AppText(
+                            _intervalTiming == cameraTimerTiming
+                                ? 'Every camera runs its own timer, started together: exact interval, but single shots are not confirmed.'
+                                : 'The app fires each shot and waits until every camera has saved it: every shot confirmed, about 3 s apart at best.',
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
                       _buildSettingDropdown(
                         'Lens',
                         _lens == 'SuperView' ? 'Wide' : _lens,
@@ -484,6 +507,12 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
                     if (_captureMode == 'photo') ...[
                       _buildSummaryRow(Icons.image, 'Format', _photoFormat),
                       _buildSummaryRow(Icons.timer, 'Interval', _interval),
+                      if (_interval != 'Off')
+                        _buildSummaryRow(
+                          Icons.schedule,
+                          'Interval Timing',
+                          _intervalTiming,
+                        ),
                     ],
                     if (_captureMode == 'video') ...[
                       _buildSummaryRow(
@@ -666,6 +695,7 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
     if (_captureMode == 'photo') {
       cameraSettings['Photo Format'] = _photoFormat;
       cameraSettings['Interval'] = _interval;
+      cameraSettings['Interval Timing'] = _intervalTiming;
       cameraSettings['Lens'] = _lens == 'SuperView' ? 'Wide' : _lens;
     } else {
       cameraSettings['Resolution'] = _resolution;

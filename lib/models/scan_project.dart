@@ -27,6 +27,7 @@ class ScanProject {
              'Lens': 'Linear',
              'Photo Format': 'Standard Photo',
              'Interval': '1s',
+             'Interval Timing': 'Camera timer',
              'Orientation': 'Portrait',
              'Target ISO': '100',
              'ISO Max': 'Camera preset',

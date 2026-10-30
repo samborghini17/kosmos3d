@@ -1,6 +1,21 @@
 /// German strings added in v2. `{name}` placeholders match any text at runtime,
 /// so messages built with interpolation translate as well.
 const germanV2 = <String, String>{
+  'Interval Timing': 'Intervall-Takt',
+  'Camera timer': 'Kamera-Timer',
+  'App (confirmed)': 'App (bestätigt)',
+  'Every camera runs its own timer, started together: exact interval, but single shots are not confirmed.':
+      'Jede Kamera nutzt ihren eigenen Timer, alle starten gleichzeitig: exaktes Intervall, aber einzelne Fotos werden nicht bestätigt.',
+  'The app fires each shot and waits until every camera has saved it: every shot confirmed, about 3 s apart at best.':
+      'Die App löst jedes Foto aus und wartet, bis alle Kameras es gespeichert haben: jedes Foto bestätigt, bestenfalls etwa alle 3 s.',
+  'Camera timers: photo times in the log are estimated from the interval.':
+      'Kamera-Timer: Fotozeiten im Protokoll sind aus dem Intervall geschätzt.',
+  'Capturing on camera timers ({s}) - tap Stop':
+      'Aufnahme mit Kamera-Timern ({s}) – Stopp tippen',
+  'Camera {id} has no {i} photo interval timer; choose app timing':
+      'Kamera {id} hat keinen Foto-Intervall-Timer für {i}; App-Takt wählen',
+  'The camera timer cannot shoot every {i}. Choose {list} or app timing.':
+      'Der Kamera-Timer kann nicht alle {i} auslösen. {list} oder App-Takt wählen.',
   // Camera networks
   '{name} Wi-Fi joined': 'Mit WLAN von {name} verbunden',
   'Read again': 'Neu einlesen',
@@ -347,7 +362,8 @@ const germanV2 = <String, String>{
       'Kopien in Fotos, sortiert nach Aufnahmedatum der Kamera.',
   'Copies in the gallery album KOSMOS3D, sorted by the date the camera took them.':
       'Kopien im Galerie-Album KOSMOS3D, sortiert nach Aufnahmedatum der Kamera.',
-  'Camera SD cards are unchanged.': 'Die SD-Karten der Kameras bleiben unverändert.',
+  'Camera SD cards are unchanged.':
+      'Die SD-Karten der Kameras bleiben unverändert.',
   'Open with…': 'Öffnen mit …',
   'Share': 'Teilen',
   'Multi-view live stream of all connected cameras':

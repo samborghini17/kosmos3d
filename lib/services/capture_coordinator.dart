@@ -23,14 +23,25 @@ abstract class RigCamera {
   Future<void> stop();
 }
 
+/// Interval timing value that hands the interval to the cameras' own timers.
+const cameraTimerTiming = 'Camera timer';
+
+/// Interval timing value where the app fires and confirms every shot.
+const appTiming = 'App (confirmed)';
+
+/// Intervals the GoPro photo interval timer offers (setting 171).
+const cameraTimerIntervals = [0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 30.0, 60.0, 120.0];
+
 /// Frozen rig membership, verified readiness and one owner for all transitions.
-/// Host intervals keep camera interval Off, so every dispatch can be logged.
+/// App-paced intervals keep camera interval Off, so every dispatch can be
+/// logged. Camera-timer intervals start every camera's own timer at the same
+/// moment; the photo events are then estimated from the interval.
 class CaptureCoordinator extends ChangeNotifier {
   CapturePhase phase = CapturePhase.idle;
   String progress = 'Not synchronized';
   String? error;
   List<RigCamera> _rig = [];
-  bool _locked = false, _active = false, _video = false;
+  bool _locked = false, _active = false, _video = false, _cameraTimer = false;
   Duration? _interval;
   Timer? _timer;
   Future<void>? _stopFuture;
@@ -39,6 +50,7 @@ class CaptureCoordinator extends ChangeNotifier {
   List<Map<String, Object>> lastDispatch = [];
   bool get busy => _locked;
   bool get active => _active;
+  bool get cameraTimer => _cameraTimer;
   List<String> get cameraIds => _rig.map((c) => c.id).toList(growable: false);
   void _state(CapturePhase state, String text) {
     phase = state;
@@ -67,10 +79,21 @@ class CaptureCoordinator extends ChangeNotifier {
         (seconds == null || seconds < 0.5 || !seconds.isFinite)) {
       throw ArgumentError('Invalid capture interval: $intervalText');
     }
+    final cameraTimer =
+        mode == 'photo' &&
+        seconds != null &&
+        settings['Interval Timing'] == cameraTimerTiming;
+    if (cameraTimer && !cameraTimerIntervals.contains(seconds)) {
+      throw ArgumentError(
+        'The camera timer cannot shoot every $intervalText. '
+        'Choose ${cameraTimerIntervals.map(_seconds).join(', ')} or app timing.',
+      );
+    }
     _locked = true;
     error = null;
     _rig = List.unmodifiable(cameras);
     _video = mode == 'video';
+    _cameraTimer = cameraTimer;
     _interval = !_video && seconds != null
         ? Duration(microseconds: (seconds * 1000000).round())
         : null;
@@ -115,6 +138,10 @@ class CaptureCoordinator extends ChangeNotifier {
     final generation = ++_generation;
     _state(CapturePhase.starting, 'Checking cameras');
     try {
+      if (_cameraTimer) {
+        await _startCameraTimers(generation);
+        return;
+      }
       await _shot(generation);
       _state(
         _active ? CapturePhase.capturing : CapturePhase.ready,
@@ -162,6 +189,50 @@ class CaptureCoordinator extends ChangeNotifier {
       await Future.wait(_rig.map((c) => c.verifyReady()));
     }
   }
+
+  /// One shutter command to every camera; each camera then shoots on its own
+  /// timer until Stop. Cameras start within the BLE ACK skew (~0.1 s).
+  Future<void> _startCameraTimers(int generation) async {
+    await Future.wait(_rig.map((c) => c.verifyReady()));
+    if (generation != _generation) return;
+    final started = DateTime.now().toUtc();
+    final clock = Stopwatch()..start();
+    lastDispatch = [];
+    await Future.wait(
+      _rig.map((c) async {
+        final record = <String, Object>{
+          'cameraId': c.id,
+          'dispatchOffsetUs': clock.elapsedMicroseconds,
+          'exposureTimeVerified': false,
+          'cameraTimer': true,
+        };
+        lastDispatch.add(record);
+        try {
+          await c.start();
+          record['ackOffsetUs'] = clock.elapsedMicroseconds;
+        } catch (e) {
+          record['error'] = '$e';
+          rethrow;
+        }
+      }),
+    );
+    _state(
+      CapturePhase.capturing,
+      'Capturing on camera timers (${_seconds(_interval!.inMicroseconds / 1e6)}) - tap Stop',
+    );
+    var shot = 0;
+    Future<void> estimate() async {
+      if (!_active || generation != _generation) return;
+      await onPhoto?.call(started.add(_interval! * shot));
+      shot++;
+    }
+
+    await estimate();
+    _timer = Timer.periodic(_interval!, (_) => unawaited(estimate()));
+  }
+
+  static String _seconds(double s) =>
+      '${s == s.roundToDouble() ? s.round() : s}s';
 
   void _schedule(int generation) {
     if (!_active || generation != _generation) return;

@@ -85,6 +85,7 @@ class SettingsProvider extends ChangeNotifier {
         'Mode': 'photo',
         'Photo Format': 'Standard Photo',
         'Interval': '1s',
+        'Interval Timing': 'Camera timer',
         'Lens': 'Linear',
         'ISO Max': 'Camera preset',
         'Shutter': 'Camera preset',

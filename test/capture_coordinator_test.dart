@@ -203,4 +203,48 @@ void main() {
       expect(rig.cameraIds, ['a']);
     },
   );
+
+  test(
+    'camera timer starts every camera once and estimates photos until Stop',
+    () async {
+      final events = <String>[];
+      final a = FakeCamera('a', events);
+      final b = FakeCamera('b', events);
+      final rig = CaptureCoordinator();
+      addTearDown(rig.dispose);
+      final photos = <DateTime>[];
+      rig.onPhoto = (t) async => photos.add(t);
+      await rig.prepare(
+        [a, b],
+        'photo',
+        {'Interval': '0.5s', 'Interval Timing': cameraTimerTiming},
+      );
+      expect(rig.cameraTimer, isTrue);
+      events.clear();
+      await rig.toggle();
+      expect(rig.phase, CapturePhase.capturing);
+      await Future<void>.delayed(const Duration(milliseconds: 1150));
+      await rig.stop();
+      expect(events.where((e) => e.endsWith(':start')), hasLength(2));
+      expect(events.where((e) => e.endsWith(':stop')), hasLength(2));
+      expect(photos.length, 3);
+      expect(photos[2].difference(photos[0]), const Duration(seconds: 1));
+      expect(rig.lastDispatch.every((d) => d['cameraTimer'] == true), isTrue);
+      final count = photos.length;
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(photos.length, count);
+    },
+  );
+  test('camera timer refuses intervals the cameras cannot run', () async {
+    final rig = CaptureCoordinator();
+    addTearDown(rig.dispose);
+    await expectLater(
+      rig.prepare(
+        [FakeCamera('a', [])],
+        'photo',
+        {'Interval': '1.5s', 'Interval Timing': cameraTimerTiming},
+      ),
+      throwsArgumentError,
+    );
+  });
 }

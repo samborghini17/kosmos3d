@@ -1398,7 +1398,9 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
           hasher.add(chunk);
         }
       }
-      sink = partial.openWrite(mode: resumed ? FileMode.append : FileMode.write);
+      sink = partial.openWrite(
+        mode: resumed ? FileMode.append : FileMode.write,
+      );
       var received = resumed ? resumeFrom : 0;
       final length = response.contentLength == null
           ? (expectedBytes ?? 0)
@@ -1705,13 +1707,40 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
         id,
         settings['Photo Format'] ?? settings['Photo Output'] ?? 'SuperPhoto',
       );
-      // Host-paced intervals: do not arm an autonomous camera interval as well.
+      // App-paced intervals: do not arm an autonomous camera interval as well.
       // Only where "off" (0) is an offered value: HERO13 lists 172 in the
       // single-photo preset but without 0.
+      final timerValue = _cameraTimerValue(settings);
       final capabilities = await _capabilityMap(id, [171, 172, 97, 177]);
-      for (final key in [171, 172, 97, 177]) {
+      for (final key in [97, 177]) {
         if (capabilities[key]?.contains(0) == true) {
           await _writeSetting(id, key, 0);
+        }
+      }
+      if (timerValue == null) {
+        for (final key in [171, 172]) {
+          if (capabilities[key]?.contains(0) == true) {
+            await _writeSetting(id, key, 0);
+          }
+        }
+      } else {
+        if (capabilities[171]?.contains(timerValue) != true) {
+          throw UnsupportedError(
+            'Camera $id has no ${settings['Interval']} photo interval timer; '
+            'choose app timing',
+          );
+        }
+        await _writeSetting(id, 171, timerValue);
+        // Run length: unlimited if offered, else the longest (Stop ends it).
+        final durations = (await _capabilityMap(id, [172]))[172] ?? [];
+        if (durations.isNotEmpty) {
+          await _writeSetting(
+            id,
+            172,
+            durations.contains(0)
+                ? 0
+                : durations.reduce((a, b) => a > b ? a : b),
+          );
         }
       }
     } else {
@@ -1770,6 +1799,27 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       }
       await _writeSetting(id, key, value);
     }
+  }
+
+  /// Setting 171 value when the interval runs on the camera timer, else null.
+  static int? _cameraTimerValue(Map<String, String> settings) {
+    if (settings['Interval Timing'] != cameraTimerTiming) return null;
+    final seconds = double.tryParse(
+      (settings['Interval'] ?? '').replaceAll('s', ''),
+    );
+    if (seconds == null) return null;
+    // Keyed by milliseconds: doubles cannot be const map keys.
+    return const {
+      500: 2,
+      1000: 3,
+      2000: 4,
+      3000: 10,
+      5000: 5,
+      10000: 6,
+      30000: 7,
+      60000: 8,
+      120000: 9,
+    }[(seconds * 1000).round()];
   }
 
   Future<void> applySettingsToCurrentMode(
