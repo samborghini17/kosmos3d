@@ -12,6 +12,7 @@ import 'gopro_protocol.dart';
 import 'capture_coordinator.dart';
 import 'system_settings_service.dart';
 import 'media_inventory.dart';
+import 'gopro_setting_catalog.dart';
 
 /// Open GoPro BLE Protocol UUIDs
 class GoProUuids {
@@ -418,10 +419,16 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       }
 
       try {
-        await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+        // Right after launch the adapter state is still "unknown"; a scan
+        // started then silently returns nothing.
+        await FlutterBluePlus.adapterState
+            .where((s) => s == BluetoothAdapterState.on)
+            .first
+            .timeout(const Duration(seconds: 5));
 
+        // Subscribe before starting so early advertisements are not missed.
         await _scanSubscription?.cancel();
-        _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+        _scanSubscription = FlutterBluePlus.onScanResults.listen((results) {
           for (var r in results) {
             final deviceName = r.device.platformName.isNotEmpty
                 ? r.device.platformName
@@ -448,8 +455,9 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
           notifyListeners();
         });
 
-        await Future.delayed(const Duration(seconds: 5));
-        await FlutterBluePlus.stopScan();
+        // Sleeping cameras advertise slowly; 10 s catches them reliably.
+        await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+        await FlutterBluePlus.isScanning.where((s) => !s).first;
       } catch (e) {
         debugPrint("BLE Scan Error: $e");
       }
@@ -575,6 +583,11 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
         );
         await protocol.exchange('command', [0x50]);
         await _readHardware(id);
+        try {
+          await syncCameraClock(id);
+        } catch (e) {
+          debugPrint('Clock sync skipped on $id: $e');
+        }
         final index = _devices.indexWhere((d) => d.id == id);
         if (index >= 0) {
           _devices[index] = _devices[index].copyWith(isConnected: true);
@@ -777,15 +790,28 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     }
   }
 
-  Future<List<int>> _capabilities(String id, int setting) async {
-    final result = await _query(id, 0x32, [setting]);
-    return result[setting] ?? [];
+  Future<List<int>> _capabilities(String id, int setting) async =>
+      (await _capabilityMap(id, [setting]))[setting] ?? [];
+
+  /// Supported options per setting in the camera's current preset.
+  Future<Map<int, List<int>>> _capabilityMap(String id, List<int> ids) async {
+    final raw = decodeTlvMulti(
+      await _protocol(id).exchange('query', [0x32, ...ids]),
+    );
+    return {
+      for (final e in raw.entries)
+        e.key: [
+          for (final v in e.value)
+            if (v.isNotEmpty) bigEndian(v),
+        ],
+    };
   }
 
   Future<void> _writeSetting(String id, int settingId, int value) async {
     const labels = <int, String>{
       2: 'Resolution',
       3: 'Frame rate',
+      234: 'Frame rate',
       121: 'Video lens',
       122: 'Photo lens',
       125: 'Photo output',
@@ -815,6 +841,113 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       throw StateError('Camera $id did not confirm setting $settingId=$value');
     }
     (_verified[id] ??= {})[settingId] = value;
+  }
+
+  // ─── RIG-WIDE SETTINGS (catalog driven) ───────────────────
+
+  /// Options this camera accepts for each catalog setting in its current preset.
+  /// Settings the model does not know are simply absent.
+  Future<Map<int, List<int>>> readSupportedSettings(String id) async {
+    if (capture.active || capture.busy) throw StateError('Stop capture first');
+    await _waitIdle(id);
+    final ids = [for (final spec in goProSettingCatalog) spec.id];
+    final result = <int, List<int>>{};
+    // Small batches keep each BLE response within one reassembled message.
+    for (var i = 0; i < ids.length; i += 12) {
+      final batch = ids.sublist(i, (i + 12).clamp(0, ids.length));
+      result.addAll(await _capabilityMap(id, batch));
+    }
+    result.removeWhere((_, options) => options.isEmpty);
+    return result;
+  }
+
+  /// Current value of each requested setting on one camera.
+  Future<Map<int, int>> readSettingValues(String id, List<int> ids) async {
+    final out = <int, int>{};
+    for (var i = 0; i < ids.length; i += 12) {
+      final batch = ids.sublist(i, (i + 12).clamp(0, ids.length));
+      final values = await _query(id, 0x12, batch);
+      for (final e in values.entries) {
+        if (e.value.isNotEmpty) out[e.key] = bigEndian(e.value);
+      }
+    }
+    return out;
+  }
+
+  /// Options every connected camera supports: the only values that keep a
+  /// mixed rig identical.
+  Future<Map<int, List<int>>> commonSupportedSettings() async {
+    final cameras = _devices.where((d) => d.isConnected).toList();
+    if (cameras.isEmpty) {
+      throw StateError('Connect GoPros over Bluetooth first');
+    }
+    Map<int, List<int>>? common;
+    for (final camera in cameras) {
+      final supported = await readSupportedSettings(camera.id);
+      common = common == null
+          ? supported
+          : {
+              for (final e in common.entries)
+                if (supported[e.key] != null)
+                  e.key: e.value.where(supported[e.key]!.contains).toList(),
+            };
+    }
+    common!.removeWhere((_, options) => options.isEmpty);
+    return common;
+  }
+
+  /// Writes one setting to every connected camera, verifying each by read-back.
+  /// Returns camera name → null on success, or the error text.
+  Future<Map<String, String?>> applySettingToAll(
+    int settingId,
+    int value,
+  ) async {
+    if (capture.active || capture.busy) throw StateError('Stop capture first');
+    final results = <String, String?>{};
+    for (final camera in _devices.where((d) => d.isConnected).toList()) {
+      try {
+        await _writeSetting(camera.id, settingId, value);
+        results[camera.name] = null;
+      } catch (e) {
+        results[camera.name] = '$e';
+      }
+    }
+    notifyListeners();
+    return results;
+  }
+
+  /// Sets the camera clock to the phone's local time (with UTC offset), so
+  /// file timestamps of all cameras line up. Falls back to the older command.
+  Future<void> syncCameraClock(String id) async {
+    final now = DateTime.now();
+    final date = [
+      (now.year >> 8) & 255,
+      now.year & 255,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute,
+      now.second,
+    ];
+    final offset = now.timeZoneOffset.inMinutes;
+    try {
+      await _protocol(id).exchange('command', [
+        0x0F,
+        10,
+        ...date,
+        (offset >> 8) & 255,
+        offset & 255,
+        0,
+      ]);
+    } on GoProRejected {
+      await _protocol(id).exchange('command', [0x0D, 7, ...date]);
+    }
+  }
+
+  Future<void> syncAllCameraClocks() async {
+    for (final camera in _devices.where((d) => d.isConnected).toList()) {
+      await syncCameraClock(camera.id);
+    }
   }
 
   // ─── HOTSPOT / TETHERING & MEDIA TRANSFER ─────────────────
@@ -1556,11 +1689,16 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
         );
       }
       if (settings['FPS'] != null) {
-        await _writeSetting(
-          id,
-          3,
-          GoProSettings.fps[settings['FPS']] ?? (throw ArgumentError('FPS')),
-        );
+        final fps =
+            GoProSettings.fps[settings['FPS']] ?? (throw ArgumentError('FPS'));
+        // HERO13 reports frame rate as setting 234; older models use 3.
+        final options = await _capabilityMap(id, [3, 234]);
+        final key = options[3]?.contains(fps) == true
+            ? 3
+            : options[234]?.contains(fps) == true
+            ? 234
+            : 3;
+        await _writeSetting(id, key, fps);
       }
       if (settings['Bitrate'] != null) {
         await _writeSetting(
@@ -1570,9 +1708,12 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
               (throw ArgumentError('Bitrate')),
         );
       }
-      final capabilities = await _query(id, 0x32, []);
-      for (final key in [156, 167, 168]) {
-        if (capabilities.containsKey(key)) await _writeSetting(id, key, 0);
+      // Continuous recording: no duration limit (100) and HindSight off (4).
+      final capabilities = await _capabilityMap(id, [156, 167]);
+      for (final entry in const {156: 100, 167: 4}.entries) {
+        if (capabilities[entry.key]?.contains(entry.value) == true) {
+          await _writeSetting(id, entry.key, entry.value);
+        }
       }
     }
     final lens = settings['Lens'];

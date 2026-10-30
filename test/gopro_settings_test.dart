@@ -30,7 +30,10 @@ class FakeGoPro {
               171 => [0, 3],
               _ => <int>[],
             };
-            reply.addAll([id, options.length, ...options]);
+            // Real cameras repeat the ID once per supported option.
+            for (final option in options) {
+              reply.addAll([id, 1, option]);
+            }
           }
         } else if (command == 0x12) {
           for (final id in request.skip(1)) {

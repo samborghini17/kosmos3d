@@ -22,6 +22,7 @@ import '../widgets/camera_live_monitor.dart';
 import 'point_cloud_preview.dart';
 import '../services/lidar_service.dart';
 import '../widgets/measured_cloud_view.dart';
+import '../widgets/point_cloud_coverage_visualizer.dart';
 
 /// The live capture session screen with coverage heatmap and 3D point cloud.
 class CaptureSessionScreen extends StatefulWidget {
@@ -817,44 +818,38 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen>
       return Center(child: AppText(settings.translate('coverage_disabled')));
     }
     if (lidar.isAvailable) return const MeasuredCloudView();
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: GestureDetector(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const PointCloudPreviewScreen()),
-        ),
-        child: Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(6),
-              child: AppText(
-                'GPS path and phone orientation (approximate)',
-                style: TextStyle(color: Colors.white54, fontSize: 11),
-              ),
-            ),
-            Expanded(
-              child: CustomPaint(
-                painter: Trajectory3DPainter(
-                  points: _trajectory.points
-                      .where((p) => p.gpsTimestamp != null)
-                      .toList(),
-                  rotX: 0.35,
-                  rotY: 0,
-                  zoom: 1,
-                  pan: Offset.zero,
-                  primaryColor: primaryColor,
+    // No LiDAR: interactive pose/coverage view from GPS + phone orientation.
+    final orientation = context.watch<OrientationService>();
+    final speed = context.watch<TrajectoryService>().latestPosition?.speed ?? 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Stack(
+        children: [
+          PointCloudCoverageVisualizer(
+            capturePoints: _capturePoints,
+            currentHeading: orientation.heading,
+            currentPitch: orientation.pitch,
+            currentRoll: orientation.roll,
+            primaryColor: primaryColor,
+            coveragePercentage: _coveragePercentage,
+            qualityScore: _qualityScore,
+            currentSpeed: speed < 0 ? 0 : speed,
+          ),
+          Positioned(
+            right: 4,
+            bottom: 4,
+            child: IconButton(
+              tooltip: 'Trajectory preview',
+              icon: const Icon(Icons.open_in_full, size: 18),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PointCloudPreviewScreen(),
                 ),
-                child: const SizedBox.expand(),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

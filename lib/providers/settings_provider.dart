@@ -38,7 +38,7 @@ class SettingsProvider extends ChangeNotifier {
   bool _serverAutoUpload = false;
   bool _recordBarometer = true;
   int _sensorRate = 50; // ms
-  int _gpsRate = 2; // seconds
+  int _gpsRate = 1; // seconds (GPS fixes arrive at ~1 Hz)
   String _captureInterval = '1s';
   bool _coverageVisualizer = true;
   bool get coverageVisualizer => _coverageVisualizer;
@@ -198,7 +198,7 @@ class SettingsProvider extends ChangeNotifier {
     _serverAutoUpload = prefs.getBool('server_auto_upload') ?? false;
     _recordBarometer = prefs.getBool('record_barometer') ?? true;
     _sensorRate = prefs.getInt('sensor_rate') ?? 50;
-    _gpsRate = prefs.getInt('gps_rate') ?? 2;
+    _gpsRate = prefs.getInt('gps_rate') ?? 1;
     _captureInterval = prefs.getString('capture_interval') ?? '1s';
     _hotspotSsid = prefs.getString('hotspot_ssid') ?? '';
     _hotspotPassword = prefs.getString('hotspot_password') ?? '';

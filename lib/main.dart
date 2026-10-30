@@ -142,8 +142,8 @@ class _StartupWrapperState extends State<_StartupWrapper> {
                 const SizedBox(height: 14),
                 _setupStep(
                   Icons.cloud,
-                  'Cloud Storage (Optional)',
-                  'Go to Settings → Cloud Storage to set up Backblaze B2 for automatic uploads.',
+                  'Storage server (optional)',
+                  'Settings → Storage server: connect your own S3-compatible bucket (Backblaze, AWS, Wasabi, R2, MinIO) or the KOSMOS Windows receiver.',
                   textColor,
                   mutedColor,
                 ),

@@ -43,4 +43,15 @@ void main() {
       );
     },
   );
+  test('a group whose count disagrees still lists its members', () {
+    final files = expandMediaEntries([
+      {'n': 'GPAA0062.JPG', 'g': '1', 't': 't', 'b': '62', 'l': '64', 's': '9'},
+    ]);
+    expect(files.map((f) => f['n']), [
+      'GPAA0062.JPG',
+      'GPAA0063.JPG',
+      'GPAA0064.JPG',
+    ]);
+    expect(files.every((f) => f['inventoryMismatch'] == true), true);
+  });
 }

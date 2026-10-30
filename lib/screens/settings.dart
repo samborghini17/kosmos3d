@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../widgets/glass_card.dart';
 import 'device_manager.dart';
+import 'camera_networks_screen.dart';
+import 'rig_settings_screen.dart';
 import '../providers/settings_provider.dart';
 import '../services/cloud_storage_service.dart';
 import '../services/rig_geometry_service.dart';
 import '../services/lidar_service.dart';
 import '../services/gopro_service.dart';
 import '../services/upload_service.dart';
+import '../l10n/ui_dictionary.dart';
 import '../services/system_settings_service.dart';
 import '../widgets/gopro_media_transfer_dialog.dart';
 import '../widgets/camera_live_monitor.dart';
@@ -115,6 +118,18 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const DeviceManagerScreen()),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildSettingCard(
+              context,
+              title: 'All camera settings',
+              subtitle:
+                  'Every GoPro setting the connected cameras share, applied to all',
+              icon: Icons.tune,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RigSettingsScreen()),
               ),
             ),
             const SizedBox(height: 8),
@@ -480,7 +495,7 @@ class SettingsScreen extends StatelessWidget {
             _buildSectionHeader(context, settings.translate('cloud_storage')),
             _buildSettingCard(
               context,
-              title: 'Backblaze B2',
+              title: 'Storage server',
               subtitle: cloud.isConfigured
                   ? settings.translate('cloud_configured')
                   : settings.translate('cloud_not_configured'),
@@ -499,11 +514,11 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 secondary: const Icon(Icons.cloud_upload, size: 22),
                 title: const AppText(
-                  'Auto-Upload (B2 Cloud)',
+                  'Auto-upload to storage server',
                   style: TextStyle(fontSize: 14),
                 ),
                 subtitle: const AppText(
-                  'Upload to Backblaze B2 after each session',
+                  'Upload the project after each session',
                   style: TextStyle(fontSize: 12),
                 ),
                 value: settings.cloudAutoUpload,
@@ -516,7 +531,7 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: 16),
 
             // ─── GAUSSIAN SPLAT PROCESSING SERVER ──────────
-            _buildSectionHeader(context, 'Gaussian Splat Processing'),
+            _buildSectionHeader(context, 'KOSMOS receiver (your computer)'),
             GlassCard(
               margin: const EdgeInsets.only(bottom: 12),
               child: Column(
@@ -600,7 +615,7 @@ class SettingsScreen extends StatelessWidget {
                       'KOSMOS 3D',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: AppText('v1.0.0 • Open Source (MIT)'),
+                    subtitle: AppText('Version 2.0.0 · Sam Wiemann · kreativ.institute'),
                   ),
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(
@@ -1180,18 +1195,40 @@ class CloudStorageDialog extends StatefulWidget {
   State<CloudStorageDialog> createState() => _CloudStorageDialogState();
 }
 
+/// Common S3-compatible providers; the endpoint is only a starting point.
+const _storageProviders = <String, ({String endpoint, String region})>{
+  'Backblaze B2 (EU Central)': (
+    endpoint: 'https://s3.eu-central-003.backblazeb2.com',
+    region: 'eu-central-003',
+  ),
+  'Amazon S3 (Frankfurt)': (
+    endpoint: 'https://s3.eu-central-1.amazonaws.com',
+    region: 'eu-central-1',
+  ),
+  'Wasabi (Amsterdam)': (
+    endpoint: 'https://s3.eu-central-1.wasabisys.com',
+    region: 'eu-central-1',
+  ),
+  'Cloudflare R2': (
+    endpoint: 'https://ACCOUNT-ID.r2.cloudflarestorage.com',
+    region: 'auto',
+  ),
+  'MinIO / own server': (endpoint: 'https://minio.example.org', region: ''),
+};
+
 class _CloudStorageDialogState extends State<CloudStorageDialog> {
   final _keyIdCtrl = TextEditingController();
   final _appKeyCtrl = TextEditingController();
   final _bucketCtrl = TextEditingController();
-  final _endpointCtrl = TextEditingController(
-    text: 's3.eu-central-003.backblazeb2.com',
-  );
-  final _regionCtrl = TextEditingController(text: 'eu-central-003');
+  final _endpointCtrl = TextEditingController();
+  final _regionCtrl = TextEditingController();
+  final _prefixCtrl = TextEditingController(text: 'kosmos3d');
   bool _obscureKey = true;
+  bool _hasSecret = false;
   bool _isTesting = false;
   bool _isSaving = false;
   String? _testResult;
+  bool _testOk = false;
 
   @override
   void initState() {
@@ -1201,15 +1238,27 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
 
   Future<void> _loadCreds() async {
     final cloud = context.read<CloudStorageService>();
+    await cloud.ready;
     final creds = await cloud.getDisplayCredentials();
+    if (!mounted) return;
     setState(() {
       _keyIdCtrl.text = creds['keyId'] ?? '';
       _bucketCtrl.text = creds['bucketName'] ?? '';
-      _endpointCtrl.text =
-          creds['endpoint'] ?? 's3.eu-central-003.backblazeb2.com';
-      _regionCtrl.text = creds['region'] ?? 'eu-central-003';
+      _endpointCtrl.text = creds['endpoint'] ?? '';
+      _regionCtrl.text = creds['region'] ?? '';
+      _prefixCtrl.text = creds['prefix'] ?? 'kosmos3d';
+      _hasSecret = creds['hasSecret'] == 'true';
     });
   }
+
+  Future<void> _store() => context.read<CloudStorageService>().saveCredentials(
+    keyId: _keyIdCtrl.text,
+    applicationKey: _appKeyCtrl.text,
+    bucketName: _bucketCtrl.text,
+    endpoint: _endpointCtrl.text,
+    region: _regionCtrl.text,
+    prefix: _prefixCtrl.text,
+  );
 
   Future<void> _testConnection() async {
     setState(() {
@@ -1217,42 +1266,31 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
       _testResult = null;
     });
     final cloud = context.read<CloudStorageService>();
-    await cloud.saveCredentials(
-      keyId: _keyIdCtrl.text.trim(),
-      applicationKey: _appKeyCtrl.text.trim(),
-      bucketName: _bucketCtrl.text.trim(),
-      endpoint: _endpointCtrl.text.trim(),
-      region: _regionCtrl.text.trim(),
-    );
+    await _store();
     final ok = await cloud.testConnection();
+    if (!mounted) return;
     setState(() {
       _isTesting = false;
+      _testOk = ok;
+      _hasSecret = _hasSecret || _appKeyCtrl.text.isNotEmpty;
       _testResult = ok
-          ? '✅ Connection successful!'
-          : '❌ ${cloud.lastError ?? "Failed"}';
+          ? 'Connected. Bucket is reachable and the key is valid.'
+          : cloud.lastError ?? 'Connection failed';
     });
   }
 
   Future<void> _save() async {
     setState(() => _isSaving = true);
-    final cloud = context.read<CloudStorageService>();
-    await cloud.saveCredentials(
-      keyId: _keyIdCtrl.text.trim(),
-      applicationKey: _appKeyCtrl.text.trim(),
-      bucketName: _bucketCtrl.text.trim(),
-      endpoint: _endpointCtrl.text.trim(),
-      region: _regionCtrl.text.trim(),
-    );
+    await _store();
+    if (!mounted) return;
     setState(() => _isSaving = false);
-    if (mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const AppText('Cloud storage configured'),
-          backgroundColor: Theme.of(context).primaryColor,
-        ),
-      );
-    }
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const AppText('Storage server saved'),
+        backgroundColor: Theme.of(context).primaryColor,
+      ),
+    );
   }
 
   @override
@@ -1262,15 +1300,19 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
     _bucketCtrl.dispose();
     _endpointCtrl.dispose();
     _regionCtrl.dispose();
+    _prefixCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final muted = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.color?.withValues(alpha: 0.6);
     return AlertDialog(
       backgroundColor: Theme.of(context).colorScheme.surface,
       title: AppText(
-        '☁️ Backblaze B2 Cloud Storage',
+        'Storage server (S3-compatible)',
         style: TextStyle(
           color: Theme.of(context).textTheme.bodyLarge?.color,
           fontSize: 16,
@@ -1281,41 +1323,67 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const AppText(
-              'Enter your B2 Application Key credentials.\nUse a restricted key, not the master key!',
-              style: TextStyle(color: Colors.orange, fontSize: 12),
+            AppText(
+              'Works with any S3-compatible storage. Use a key limited to one bucket with read, list and write access.',
+              style: TextStyle(color: muted, fontSize: 12),
             ),
-            const SizedBox(height: 16),
-            _field('Key ID', _keyIdCtrl, Icons.key),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: _tr('Quick fill'),
+                isDense: true,
+              ),
+              items: [
+                for (final name in _storageProviders.keys)
+                  DropdownMenuItem(value: name, child: Text(_tr(name))),
+              ],
+              onChanged: (name) {
+                final p = _storageProviders[name];
+                if (p == null) return;
+                setState(() {
+                  _endpointCtrl.text = p.endpoint;
+                  _regionCtrl.text = p.region;
+                });
+              },
+            ),
+            const SizedBox(height: 10),
+            _field('Endpoint URL', _endpointCtrl, Icons.language),
+            const SizedBox(height: 10),
+            _field('Region (optional)', _regionCtrl, Icons.map),
+            const SizedBox(height: 10),
+            _field('Bucket', _bucketCtrl, Icons.folder),
+            const SizedBox(height: 10),
+            _field('Access key ID', _keyIdCtrl, Icons.key),
             const SizedBox(height: 10),
             _field(
-              'Application Key',
+              _hasSecret
+                  ? 'Secret key (saved, leave empty to keep)'
+                  : 'Secret key',
               _appKeyCtrl,
               Icons.lock,
               obscure: _obscureKey,
               suffix: IconButton(
                 icon: Icon(
                   _obscureKey ? Icons.visibility_off : Icons.visibility,
-                  color: Colors.white38,
                   size: 18,
                 ),
                 onPressed: () => setState(() => _obscureKey = !_obscureKey),
               ),
             ),
             const SizedBox(height: 10),
-            _field('Bucket Name', _bucketCtrl, Icons.folder),
-            const SizedBox(height: 10),
-            _field('S3 Endpoint', _endpointCtrl, Icons.language),
-            const SizedBox(height: 10),
-            _field('Region', _regionCtrl, Icons.map),
+            _field('Folder in bucket', _prefixCtrl, Icons.create_new_folder),
+            const SizedBox(height: 8),
+            AppText(
+              'Projects upload to bucket/folder/<project>_<id>/ with the same structure as on the phone. Files already on the server are skipped.',
+              style: TextStyle(color: muted, fontSize: 11),
+            ),
             if (_testResult != null) ...[
               const SizedBox(height: 12),
               AppText(
                 _testResult!,
                 style: TextStyle(
-                  color: _testResult!.startsWith('✅')
-                      ? Colors.greenAccent
-                      : Colors.redAccent,
+                  color: _testOk ? Colors.greenAccent : Colors.redAccent,
                   fontSize: 12,
                 ),
               ),
@@ -1326,10 +1394,7 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const AppText(
-            'Cancel',
-            style: TextStyle(color: Colors.white54),
-          ),
+          child: const AppText('Cancel'),
         ),
         TextButton(
           onPressed: _isTesting ? null : _testConnection,
@@ -1355,6 +1420,11 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
     );
   }
 
+  String _tr(String text) => UiDictionary.translate(
+    context.read<SettingsProvider>().currentLanguage,
+    text,
+  );
+
   Widget _field(
     String label,
     TextEditingController ctrl,
@@ -1365,12 +1435,14 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
     return TextField(
       controller: ctrl,
       obscureText: obscure,
+      autocorrect: false,
+      enableSuggestions: false,
       style: TextStyle(
         color: Theme.of(context).textTheme.bodyLarge?.color,
         fontSize: 13,
       ),
       decoration: InputDecoration(
-        labelText: label,
+        labelText: _tr(label),
         labelStyle: TextStyle(
           color: Theme.of(
             context,
@@ -1411,32 +1483,12 @@ class _CloudStorageDialogState extends State<CloudStorageDialog> {
 
 // ─── HOTSPOT DIALOG ──────────────────────────────────────────
 
+/// Kept as a dialog entry point for existing call sites.
 class HotspotDialog extends StatelessWidget {
   const HotspotDialog({super.key});
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const AppText('Camera networks'),
-    content: const SingleChildScrollView(
-      child: AppText(
-        'The easiest supported route is Import all: the phone joins each GoPro Wi-Fi in turn, reads its SD card and stores the originals. The app reads the password over Bluetooth.\n\n'
-        'HERO12/13 can use a shared hotspot through COHN, but this requires camera-specific provisioning, HTTPS credentials and certificate verification. That route is not implemented in this build. Older models use direct Wi-Fi.\n\n'
-        'After import, return to your normal network to upload. Keeping the phone hotspot on may prevent it from joining a camera network.',
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const AppText('Close'),
-      ),
-      FilledButton(
-        onPressed: () {
-          Navigator.pop(context);
-          GoProMediaTransferDialog.show(context);
-        },
-        child: const AppText('Import originals'),
-      ),
-    ],
-  );
+  Widget build(BuildContext context) =>
+      const Dialog.fullscreen(child: CameraNetworksScreen());
 }
 
 class _ServerConfigDialog extends StatefulWidget {

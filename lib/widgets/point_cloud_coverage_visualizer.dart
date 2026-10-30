@@ -303,7 +303,7 @@ class _PointCloudCoverageVisualizerState
                     Icon(Icons.check_circle, size: 14, color: Colors.white),
                     SizedBox(width: 5),
                     AppText(
-                      '360° LOOP CLOSED • 3DGS READY',
+                      '360° HEADINGS COVERED',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 10,

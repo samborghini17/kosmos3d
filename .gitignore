@@ -62,3 +62,7 @@ desktop.ini
 
 # Local migration research, build logs and temporary tool files
 /work/
+
+# Local build-time defaults (credentials). Never commit.
+/config/*.local.json
+build_log.txt

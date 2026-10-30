@@ -1,4 +1,5 @@
 import '../l10n/app_text.dart';
+import 'rig_settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -90,22 +91,12 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
           ),
           if (cameras.any((c) => c.isConnected))
             IconButton(
-              icon: const Icon(Icons.wifi_tethering),
-              onPressed: () async {
-                try {
-                  await goPro.connectAllToHotspot(
-                    settings.hotspotSsid,
-                    settings.hotspotPassword,
-                  );
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: AppText('$e')));
-                  }
-                }
-              },
-              tooltip: 'Connect All to Hotspot',
+              icon: const Icon(Icons.tune),
+              tooltip: 'All camera settings',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RigSettingsScreen()),
+              ),
             ),
           IconButton(
             icon: goPro.isScanning
@@ -175,20 +166,20 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.wifi_tethering,
-                          size: 20,
-                          color: Colors.lightBlueAccent,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => showDialog(
-                              context: context,
-                              builder: (_) => const HotspotDialog(),
-                            ),
+                    InkWell(
+                      onTap: () => showDialog(
+                        context: context,
+                        builder: (_) => const HotspotDialog(),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.wifi_tethering,
+                            size: 20,
+                            color: Colors.lightBlueAccent,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -197,52 +188,39 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
-                                    color: Colors.white,
                                   ),
                                 ),
                                 AppText(
-                                  'Direct Wi-Fi import and network help',
+                                  'Wi-Fi passwords, one-tap join and import from every camera',
                                   style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.7),
                                     fontSize: 11,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.settings,
-                            size: 18,
-                            color: Colors.white70,
-                          ),
-                          tooltip: 'Open Device Hotspot Settings',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
-                          ),
-                          onPressed: () =>
-                              SystemSettingsService.openHotspotSettings(),
-                        ),
+                          const Icon(Icons.chevron_right, size: 18),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 4,
+                      children: [
                         TextButton.icon(
                           onPressed: () =>
                               GoProMediaTransferDialog.show(context),
                           icon: const Icon(
                             Icons.download_for_offline,
-                            size: 14,
+                            size: 16,
                           ),
-                          label: const AppText(
-                            'Transfer',
-                            style: TextStyle(fontSize: 11),
-                          ),
+                          label: const AppText('Transfer'),
                           style: TextButton.styleFrom(
                             foregroundColor: Theme.of(context).primaryColor,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
                           ),
                         ),
                         TextButton.icon(
@@ -250,18 +228,17 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                             context: context,
                             builder: (_) => const HotspotDialog(),
                           ),
-                          icon: const Icon(Icons.send_rounded, size: 14),
-                          label: const AppText(
-                            'Network help',
-                            style: TextStyle(fontSize: 11),
-                          ),
+                          icon: const Icon(Icons.key, size: 16),
+                          label: const AppText('Wi-Fi passwords'),
                           style: TextButton.styleFrom(
                             foregroundColor: Colors.lightBlueAccent,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
                           ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () =>
+                              SystemSettingsService.openHotspotSettings(),
+                          icon: const Icon(Icons.settings, size: 16),
+                          label: const AppText('Hotspot settings'),
                         ),
                       ],
                     ),
@@ -454,7 +431,11 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (cam.isConnected) AppText(goPro.modelFor(cam.id), style: const TextStyle(fontSize: 11)),
+                        if (cam.isConnected)
+                          AppText(
+                            goPro.modelFor(cam.id),
+                            style: const TextStyle(fontSize: 11),
+                          ),
                         const SizedBox(height: 2),
                         Row(
                           children: [
@@ -642,40 +623,16 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                     onTap: () => goPro.disconnectDevice(cam.id),
                   ),
                   const SizedBox(width: 8),
+                  // Formatting is left to the camera: Open GoPro has no
+                  // verified format command, so no button pretends otherwise.
                   _buildActionButton(
-                    icon: Icons.sd_card,
-                    label: settings.translate('format_sd'),
-                    color: Colors.redAccent,
-                    onTap: () async {
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          backgroundColor: const Color(0xFF1E1E1E),
-                          title: const AppText(
-                            '⚠️ Format SD Card?',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          content: AppText(
-                            settings.translate('format_sd_confirm'),
-                            style: const TextStyle(color: Colors.orange),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const AppText('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const AppText(
-                                'Format',
-                                style: TextStyle(color: Colors.redAccent),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (ok == true) await goPro.formatSdCard(cam.id);
-                    },
+                    icon: Icons.key,
+                    label: 'Wi-Fi password',
+                    color: Colors.lightBlueAccent,
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) => const HotspotDialog(),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   _buildActionButton(

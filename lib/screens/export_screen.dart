@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/storage_upload_dialog.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/scan_project.dart';
@@ -72,15 +73,17 @@ class _ExportScreenState extends State<ExportScreen> {
         _isExporting = false;
       });
 
-      // Auto Upload to B2 if configured and enabled
+      // Auto-upload to the storage server if configured and enabled
       if (mounted) {
         final settings = context.read<SettingsProvider>();
         final cloud = context.read<CloudStorageService>();
         if (settings.autoUpload && cloud.isConfigured) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Starting Auto-Upload to Backblaze B2...'))
+          await showStorageUploadDialog(
+            context,
+            projectId: widget.project.id,
+            projectName: widget.project.name,
+            confirm: false,
           );
-          cloud.uploadProject(widget.project.id, widget.project.name);
         }
       }
     } catch (e) {

@@ -1,4 +1,5 @@
 import 'app_translations.dart';
+import 'ui_dictionary_v2.dart';
 
 class UiDictionary {
   static const german = <String, String>{
@@ -6,7 +7,8 @@ class UiDictionary {
     'Target shutter (manual)': 'Ziel-Verschlusszeit (manuell)',
     'Target white balance (manual)': 'Ziel-Weißabgleich (manuell)',
     'Mounting (manual)': 'Montage (manuell)',
-    'Check exposure and mounting on every camera. The app verifies only supported BLE settings.': 'Belichtung und Montage auf jeder Kamera prüfen. Die App kontrolliert nur unterstützte BLE-Einstellungen.',
+    'Check exposure and mounting on every camera. The app verifies only supported BLE settings.':
+        'Belichtung und Montage auf jeder Kamera prüfen. Die App kontrolliert nur unterstützte BLE-Einstellungen.',
     "1s (fast)": "1 s (schnell)",
     "2s (normal)": "2 s (normal)",
     "5s (battery)": "5 s (sparsam)",
@@ -17,11 +19,14 @@ class UiDictionary {
     "Clipboard is empty": "Zwischenablage ist leer",
     "Cloud storage configured": "Cloud-Speicher eingerichtet",
     "Copy to clipboard": "In Zwischenablage kopieren",
-    "Define rig offsets for each camera": "Position und Ausrichtung jeder Kamera am Rig festlegen",
+    "Define rig offsets for each camera":
+        "Position und Ausrichtung jeder Kamera am Rig festlegen",
     "Delete Project?": "Projekt löschen?",
     "Delete Selected?": "Auswahl löschen?",
-    "Direct Wi-Fi import and network help": "Direkter WLAN-Import und Netzwerkhilfe",
-    "Direct Wi-Fi, passwords and hotspot compatibility": "Direktes WLAN, Passwörter und Hotspot-Kompatibilität",
+    "Direct Wi-Fi import and network help":
+        "Direkter WLAN-Import und Netzwerkhilfe",
+    "Direct Wi-Fi, passwords and hotspot compatibility":
+        "Direktes WLAN, Passwörter und Hotspot-Kompatibilität",
     "Export CSV": "CSV exportieren",
     "Export JSON": "JSON exportieren",
     "Export Trajectory": "Sensorpfad exportieren",
@@ -29,15 +34,18 @@ class UiDictionary {
     "Format": "Format",
     "GPS Poll Rate": "GPS-Abfrageintervall",
     "Gallery": "Galerie",
-    "Gaussian Splatting - daylight video": "Gaussian Splatting – Tageslichtvideo",
+    "Gaussian Splatting - daylight video":
+        "Gaussian Splatting – Tageslichtvideo",
     "Gaussian Splatting Rig Controller": "Rig-Steuerung für Gaussian Splatting",
-    "GoPro Labs: Gaussian daylight video": "GoPro Labs: Gaussian-Tageslichtvideo",
+    "GoPro Labs: Gaussian daylight video":
+        "GoPro Labs: Gaussian-Tageslichtvideo",
     "HiLight tag added": "HiLight-Markierung gesetzt",
     "IMU Sample Rate": "IMU-Abtastrate",
     "Import all camera originals": "Alle Kameraoriginale importieren",
     "Import camera originals": "Kameraoriginale importieren",
     "Invalid settings format": "Ungültiges Einstellungsformat",
-    "Join cameras one at a time; optionally export to Photos / Gallery": "Kameras nacheinander verbinden; optional nach Fotos / Galerie exportieren",
+    "Join cameras one at a time; optionally export to Photos / Gallery":
+        "Kameras nacheinander verbinden; optional nach Fotos / Galerie exportieren",
     "KOSMOS 3D Camera Settings": "KOSMOS-3D-Kameraeinstellungen",
     "LiDAR Scanner": "LiDAR-Scanner",
     "Location Services Required": "Standortdienste erforderlich",
@@ -45,23 +53,28 @@ class UiDictionary {
     "Naming Template": "Namensvorlage",
     "Network help": "Netzwerkhilfe",
     "No captures yet": "Noch keine Aufnahmen",
-    "No trajectory data available. Record some captures first.": "Keine Pfaddaten vorhanden. Zuerst Aufnahmen aufzeichnen.",
-    "One camera over Wi-Fi. Preview stops before capture; model and firmware support varies.": "Eine Kamera per WLAN. Die Vorschau endet vor der Aufnahme; Unterstützung hängt von Modell und Firmware ab.",
+    "No trajectory data available. Record some captures first.":
+        "Keine Pfaddaten vorhanden. Zuerst Aufnahmen aufzeichnen.",
+    "One camera over Wi-Fi. Preview stops before capture; model and firmware support varies.":
+        "Eine Kamera per WLAN. Die Vorschau endet vor der Aufnahme; Unterstützung hängt von Modell und Firmware ab.",
     "One rig. Every perspective.": "Ein Rig. Jede Perspektive.",
     "Open Session": "Sitzung öffnen",
     "Processing Server": "Upload-Server",
-    "Reconnect cameras and retry Stop": "Kameras neu verbinden und Stopp erneut versuchen",
+    "Reconnect cameras and retry Stop":
+        "Kameras neu verbinden und Stopp erneut versuchen",
     "Remove": "Entfernen",
     "Rig Camera Layout": "Kameraanordnung am Rig",
     "SHUTTER EVENTS": "AUSLÖSEEREIGNISSE",
     "Scan for Devices": "Geräte suchen",
-    "Scan from another phone to apply settings": "Mit einem anderen Telefon scannen, um Einstellungen zu übernehmen",
+    "Scan from another phone to apply settings":
+        "Mit einem anderen Telefon scannen, um Einstellungen zu übernehmen",
     "Scan this QR": "Diesen QR-Code scannen",
     "Server configuration saved": "Serverkonfiguration gespeichert",
     "Settings JSON copied!": "Einstellungs-JSON kopiert!",
     "Start preview": "Vorschau starten",
     "Supported Sensors": "Erkannte Sensoren",
-    "Supported settings verified on camera": "Unterstützte Einstellungen auf der Kamera geprüft",
+    "Supported settings verified on camera":
+        "Unterstützte Einstellungen auf der Kamera geprüft",
     "Switched to Photo mode": "In den Fotomodus gewechselt",
     "Switched to Video mode": "In den Videomodus gewechselt",
     "Synchronize again": "Erneut abgleichen",
@@ -78,17 +91,28 @@ class UiDictionary {
     "✅ Settings Found!": "✅ Einstellungen gefunden!",
     "📋 Before your first scan:\n": "📋 Vor der ersten Aufnahme:\n",
     "📱 Camera Settings QR": "📱 Kameraeinstellungen als QR-Code",
-    "Approximate GPS / phone attitude; not reconstructed surface coverage. Drag to rotate; pinch to zoom.": "Ungefähre GPS-Position und Telefonausrichtung; keine rekonstruierte Oberflächenabdeckung. Zum Drehen ziehen, mit zwei Fingern zoomen.",
-    "No system Bluetooth pairing needed! Just make sure your GoPros have Wireless Connections enabled, then tap Scan → tap a camera to connect.": "GoPros in den Kopplungsmodus versetzen, Suchen antippen und eine Kamera verbinden. Eine Kopplungsanfrage des Telefons bestätigen.",
-    "Android requires Location / GPS to be ON for Bluetooth scanning.\n\nPull down your quick settings and turn on Location.": "Je nach Android-Version müssen die Standortdienste für die Bluetooth-Suche aktiv sein.\n\nStandort in den Schnelleinstellungen einschalten.",
-    "Enter your B2 Application Key credentials.\nUse a restricted key, not the master key!": "B2-Anwendungsschlüssel und ein vorhandenes Bucket angeben.\nEinen auf Uploads beschränkten Schlüssel verwenden.",
-    "Requires GoPro Labs firmware. Show this QR to each camera and confirm the settings on its display. No capture is started.": "GoPro-Labs-Firmware erforderlich. Den QR-Code jeder Kamera zeigen und die Einstellungen auf ihrem Display prüfen. Es wird keine Aufnahme gestartet.",
-    "QR acceptance and Protune values are not verified over BLE. Keep the configured Video preset active on each camera.": "QR-Übernahme und Protune-Werte werden nicht per BLE geprüft. Die konfigurierte Video-Voreinstellung auf jeder Kamera aktiv lassen.",
-    "4K / 30 fps / 5500K / ISO 100-200 / 45-degree shutter (1/240 s) / high bitrate / stabilization off. Select Linear in the app. Use good lighting.": "4K / 30 fps / 5500 K / ISO 100–200 / 45°-Verschluss (1/240 s) / hohe Bitrate / Stabilisierung aus. Linear in der App auswählen. Gute Beleuchtung verwenden.",
-    "WiFi AP enabled — connect your phone to GoPro WiFi to download media": "Kamera-WLAN aktiv – Telefon für den Download mit dem GoPro-WLAN verbinden",
-    "GPS enabled — positions are logged; original photo EXIF is unchanged": "GPS aktiv – Positionen werden protokolliert; EXIF-Daten der Originalfotos bleiben unverändert",
-    "Ready - BLE settings verified; check manual exposure and mounting": "Bereit – BLE-Einstellungen geprüft; Belichtung und Montage manuell kontrollieren",
-    "Configure file uploads here. Reconstruction requires a separate processing service.": "Hier Datei-Uploads konfigurieren. Für die Rekonstruktion ist ein separater Verarbeitungsdienst erforderlich.",
+    "Approximate GPS / phone attitude; not reconstructed surface coverage. Drag to rotate; pinch to zoom.":
+        "Ungefähre GPS-Position und Telefonausrichtung; keine rekonstruierte Oberflächenabdeckung. Zum Drehen ziehen, mit zwei Fingern zoomen.",
+    "No system Bluetooth pairing needed! Just make sure your GoPros have Wireless Connections enabled, then tap Scan → tap a camera to connect.":
+        "GoPros in den Kopplungsmodus versetzen, Suchen antippen und eine Kamera verbinden. Eine Kopplungsanfrage des Telefons bestätigen.",
+    "Android requires Location / GPS to be ON for Bluetooth scanning.\n\nPull down your quick settings and turn on Location.":
+        "Je nach Android-Version müssen die Standortdienste für die Bluetooth-Suche aktiv sein.\n\nStandort in den Schnelleinstellungen einschalten.",
+    "Enter your B2 Application Key credentials.\nUse a restricted key, not the master key!":
+        "B2-Anwendungsschlüssel und ein vorhandenes Bucket angeben.\nEinen auf Uploads beschränkten Schlüssel verwenden.",
+    "Requires GoPro Labs firmware. Show this QR to each camera and confirm the settings on its display. No capture is started.":
+        "GoPro-Labs-Firmware erforderlich. Den QR-Code jeder Kamera zeigen und die Einstellungen auf ihrem Display prüfen. Es wird keine Aufnahme gestartet.",
+    "QR acceptance and Protune values are not verified over BLE. Keep the configured Video preset active on each camera.":
+        "QR-Übernahme und Protune-Werte werden nicht per BLE geprüft. Die konfigurierte Video-Voreinstellung auf jeder Kamera aktiv lassen.",
+    "4K / 30 fps / 5500K / ISO 100-200 / 45-degree shutter (1/240 s) / high bitrate / stabilization off. Select Linear in the app. Use good lighting.":
+        "4K / 30 fps / 5500 K / ISO 100–200 / 45°-Verschluss (1/240 s) / hohe Bitrate / Stabilisierung aus. Linear in der App auswählen. Gute Beleuchtung verwenden.",
+    "WiFi AP enabled — connect your phone to GoPro WiFi to download media":
+        "Kamera-WLAN aktiv – Telefon für den Download mit dem GoPro-WLAN verbinden",
+    "GPS enabled — positions are logged; original photo EXIF is unchanged":
+        "GPS aktiv – Positionen werden protokolliert; EXIF-Daten der Originalfotos bleiben unverändert",
+    "Ready - BLE settings verified; check manual exposure and mounting":
+        "Bereit – BLE-Einstellungen geprüft; Belichtung und Montage manuell kontrollieren",
+    "Configure file uploads here. Reconstruction requires a separate processing service.":
+        "Hier Datei-Uploads konfigurieren. Für die Rekonstruktion ist ein separater Verarbeitungsdienst erforderlich.",
     'Projects': 'Projekte',
     'Cameras': 'Kameras',
     'Transfers': 'Übertragungen',
@@ -296,28 +320,69 @@ class UiDictionary {
     '{name} Wi-Fi': '{name}: WLAN',
   };
 
+  /// Dart prefixes for exception messages shown with `'$e'`.
+  static const _errorPrefixes = <String, String>{
+    'Bad state: ': 'Fehler: ',
+    'Unsupported operation: ': 'Nicht unterstützt: ',
+    'Exception: ': 'Fehler: ',
+    'FormatException: ': 'Formatfehler: ',
+    'HttpException: ': 'Netzwerkfehler: ',
+    'Invalid argument(s): ': 'Ungültige Angabe: ',
+  };
+
+  static final List<(RegExp, List<String>, String)> _patterns = () {
+    final entries = [
+      ...german.entries,
+      ...germanV2.entries,
+    ].where((e) => e.key.contains('{')).toList();
+    // Most literal text first: "Transferred {n} files" beats "{n} files".
+    int literal(String key) => key.replaceAll(RegExp(r'\{\w+\}'), '').length;
+    entries.sort((a, b) => literal(b.key).compareTo(literal(a.key)));
+    return [
+      for (final entry in entries)
+        () {
+          final names = RegExp(
+            r'\{(\w+)\}',
+          ).allMatches(entry.key).map((m) => m[1]!).toList();
+          var pattern = RegExp.escape(entry.key);
+          for (final name in names) {
+            pattern = pattern.replaceFirst(RegExp.escape('{$name}'), '(.+?)');
+          }
+          return (RegExp('^$pattern\$', dotAll: true), names, entry.value);
+        }(),
+    ];
+  }();
+
   static String translate(String language, String text) {
-    if (language != 'de') return text;
-    final exact = german[text];
+    if (language != 'de' || text.isEmpty) return text;
+    final exact = german[text] ?? germanV2[text];
     if (exact != null) return exact;
     final legacy = AppTranslations.translateEnglishText(text);
     if (legacy != text) return legacy;
-    for (final entry in german.entries.where((e) => e.key.contains('{'))) {
-      final names = RegExp(
-        r'\{(\w+)\}',
-      ).allMatches(entry.key).map((m) => m[1]!).toList();
-      var pattern = RegExp.escape(entry.key);
-      for (final name in names) {
-        pattern = pattern.replaceFirst(RegExp.escape('{$name}'), '(.+)');
-      }
-      final match = RegExp('^$pattern\$').firstMatch(text);
+    for (final (regex, names, value) in _patterns) {
+      final match = regex.firstMatch(text);
       if (match != null) {
-        var value = entry.value;
+        var result = value;
         for (var i = 0; i < names.length; i++) {
-          value = value.replaceAll('{${names[i]}}', match[i + 1]!);
+          result = result.replaceAll('{${names[i]}}', match[i + 1]!);
         }
-        return value;
+        return result;
       }
+    }
+    for (final prefix in _errorPrefixes.entries) {
+      if (text.startsWith(prefix.key)) {
+        final rest = text.substring(prefix.key.length);
+        final translated = translate(language, rest);
+        if (translated != rest) return '${prefix.value}$translated';
+      }
+    }
+    // Multi-line status text: translate line by line.
+    if (text.contains('\n')) {
+      final joined = text
+          .split('\n')
+          .map((line) => translate(language, line))
+          .join('\n');
+      if (joined != text) return joined;
     }
     return text;
   }

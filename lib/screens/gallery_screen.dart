@@ -1,4 +1,5 @@
 import '../l10n/app_text.dart';
+import '../widgets/storage_upload_dialog.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -136,14 +137,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 }
               },
             ),
-            // Upload to B2
+            // Upload to storage server
             if (cloud.isConfigured)
               IconButton(
                 icon: const Icon(Icons.cloud),
-                tooltip: 'Upload to B2',
+                tooltip: 'Upload to storage server',
                 onPressed: _imageFiles.isEmpty
                     ? null
-                    : () => _showB2UploadDialog(context, cloud),
+                    : () => showStorageUploadDialog(
+                        context,
+                        projectId: widget.project.id,
+                        projectName: widget.project.name,
+                      ),
               ),
             // Upload to server
             IconButton(
@@ -450,36 +455,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
               );
             },
             child: const AppText('Upload'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showB2UploadDialog(BuildContext context, CloudStorageService cloud) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const AppText(
-          '☁️ Upload to Backblaze B2',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: AppText(
-          'Upload ${_imageFiles.length} files + trajectory from "${widget.project.name}" to your B2 bucket?',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const AppText('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              cloud.uploadProject(widget.project.id, widget.project.name);
-            },
-            child: const AppText('Upload to B2'),
           ),
         ],
       ),

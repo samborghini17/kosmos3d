@@ -147,6 +147,20 @@ Map<int, List<int>> decodeTlv(List<int> payload) {
   return values;
 }
 
+/// Capability responses repeat the setting ID once per supported option.
+Map<int, List<List<int>>> decodeTlvMulti(List<int> payload) {
+  final values = <int, List<List<int>>>{};
+  for (var i = 2; i < payload.length;) {
+    if (i + 2 > payload.length || i + 2 + payload[i + 1] > payload.length) {
+      throw const FormatException('Truncated TLV');
+    }
+    final length = payload[i + 1];
+    (values[payload[i]] ??= []).add(payload.sublist(i + 2, i + 2 + length));
+    i += 2 + length;
+  }
+  return values;
+}
+
 int bigEndian(List<int> bytes) => bytes.fold(0, (v, b) => (v << 8) | b);
 
 /// Bounded protobuf wire reader; unknown fields are skipped for compatibility.

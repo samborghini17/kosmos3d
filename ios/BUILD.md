@@ -12,6 +12,19 @@ Flutter analysis and Android builds cannot validate Swift or produce an IPA.
    location as needed. Photos permission is requested only when exporting.
 5. For distribution, configure signing and run `flutter build ipa --release`.
 
+## Without a Mac (Windows)
+
+The GitHub Actions workflow `.github/workflows/build.yml` builds an unsigned
+`kosmos3d-unsigned.ipa` on a macOS runner for every push. Download the
+`kosmos3d-ios-unsigned-ipa` artifact and install it with Sideloadly or AltStore,
+signed with your Apple ID:
+
+- Free Apple ID: the app runs for 7 days, then re-sign. The Hotspot
+  Configuration capability is unavailable, so one-tap camera Wi-Fi join falls
+  back to joining in iOS Settings (the app shows SSID, password and a Wi-Fi QR).
+- Paid developer account (99 USD/year): one-year profiles, Hotspot
+  Configuration works, and TestFlight distribution becomes possible.
+
 Native additions: direct GoPro Wi-Fi joining through NEHotspotConfiguration;
 Photos export; Files-visible exports; ARKit sceneDepth sampling with confidence
 filtering, camera transform, intrinsics and monotonic timestamps; bounded preview

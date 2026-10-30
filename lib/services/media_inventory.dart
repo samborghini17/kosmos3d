@@ -41,9 +41,14 @@ List<Map<String, dynamic>> expandMediaEntries(List<dynamic> entries) {
           });
         }
       }
+      // `s` should equal the member count, but HERO13 firmware reports other
+      // values for some groups. Every member is fetched and verified on its
+      // own, so a mismatch is flagged instead of blocking the whole camera.
       final count = int.tryParse('${entry['s']}');
       if (count != null && count != members.length) {
-        throw FormatException('Incomplete media group inventory: $filename');
+        for (final member in members) {
+          member['inventoryMismatch'] = true;
+        }
       }
     } else {
       members.add(entry);

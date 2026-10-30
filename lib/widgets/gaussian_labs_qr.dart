@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../l10n/app_text.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -42,3 +43,131 @@ Future<void> showGaussianLabsQr(BuildContext context) => showDialog<void>(
     ],
   ),
 );
+
+/// Labs command for fixed exposure plus a camera clock set to this phone.
+/// ISO syntax: `i{max/100}M{min/100}`; white balance: `w{kelvin/100}` or `wA`.
+String exposureLabsRecipe({
+  required int iso,
+  required int? kelvin,
+  required DateTime now,
+}) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  final isoCode = '${iso ~/ 100}';
+  final wb = kelvin == null ? 'wA' : 'w${kelvin ~/ 100}';
+  final time =
+      '${two(now.year % 100)}${two(now.month)}${two(now.day)}'
+      '${two(now.hour)}${two(now.minute)}${two(now.second)}'
+      '.${now.millisecond.toString().padLeft(3, '0')}';
+  return 'i${isoCode}M$isoCode${wb}oT$time';
+}
+
+Future<void> showExposureLabsQr(BuildContext context, {int iso = 100}) =>
+    showDialog<void>(
+      context: context,
+      builder: (_) => _ExposureLabsDialog(initialIso: iso),
+    );
+
+class _ExposureLabsDialog extends StatefulWidget {
+  const _ExposureLabsDialog({required this.initialIso});
+  final int initialIso;
+
+  @override
+  State<_ExposureLabsDialog> createState() => _ExposureLabsDialogState();
+}
+
+class _ExposureLabsDialogState extends State<_ExposureLabsDialog> {
+  late int _iso = widget.initialIso;
+  int? _kelvin = 5500;
+  late final Timer _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    // The embedded clock must be current when the camera reads the code.
+    _tick = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => setState(() {}),
+    );
+  }
+
+  @override
+  void dispose() {
+    _tick.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final recipe = exposureLabsRecipe(
+      iso: _iso,
+      kelvin: _kelvin,
+      now: DateTime.now(),
+    );
+    return AlertDialog(
+      title: const AppText('Same exposure on every camera'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const AppText(
+              'GoPro Labs firmware only. Hold the QR in front of each camera until it beeps. Sets ISO, white balance and the camera clock to this phone.',
+            ),
+            const SizedBox(height: 12),
+            const AppText('ISO'),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final iso in const [100, 200, 400, 800, 1600])
+                  ChoiceChip(
+                    label: Text('$iso'),
+                    selected: _iso == iso,
+                    onSelected: (_) => setState(() => _iso = iso),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const AppText('White balance'),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final k in const [null, 4000, 5000, 5500, 6500])
+                  ChoiceChip(
+                    label: AppText(k == null ? 'Auto' : '${k}K'),
+                    selected: _kelvin == k,
+                    onSelected: (_) => setState(() => _kelvin = k),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(12),
+                child: QrImageView(data: recipe, size: 220),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Center(
+              child: SelectableText(
+                recipe,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const AppText(
+              'Stock firmware ignores this code. Then set ISO and white balance once in each camera’s Protune menu.',
+              style: TextStyle(color: Colors.orange, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const AppText('Close'),
+        ),
+      ],
+    );
+  }
+}
