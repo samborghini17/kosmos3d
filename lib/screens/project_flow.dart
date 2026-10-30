@@ -130,7 +130,9 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (isLastStep && _startError != null)
+                    if (isLastStep &&
+                        details.stepIndex == _currentStep &&
+                        _startError != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: AppText(
@@ -714,15 +716,7 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
     } catch (e) {
       debugPrint('Project start failed: $e');
       if (mounted) setState(() => _startError = '$e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: AppText('Project not started: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
+      if (context.mounted) ScaffoldMessenger.of(context).clearSnackBars();
       if (mounted) setState(() => _isStarting = false);
     }
   }
