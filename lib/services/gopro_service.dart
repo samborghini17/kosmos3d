@@ -1706,9 +1706,13 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
         settings['Photo Format'] ?? settings['Photo Output'] ?? 'SuperPhoto',
       );
       // Host-paced intervals: do not arm an autonomous camera interval as well.
-      final capabilities = await _query(id, 0x32, []);
+      // Only where "off" (0) is an offered value: HERO13 lists 172 in the
+      // single-photo preset but without 0.
+      final capabilities = await _capabilityMap(id, [171, 172, 97, 177]);
       for (final key in [171, 172, 97, 177]) {
-        if (capabilities.containsKey(key)) await _writeSetting(id, key, 0);
+        if (capabilities[key]?.contains(0) == true) {
+          await _writeSetting(id, key, 0);
+        }
       }
     } else {
       if (settings['Resolution'] != null) {

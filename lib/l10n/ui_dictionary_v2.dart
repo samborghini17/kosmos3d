@@ -674,6 +674,8 @@ const germanV2 = <String, String>{
   'Measured LiDAR · {n} displayed points · {tracking}\nColour = height. Unseen surfaces and photo overlap are not measured.':
       'Gemessenes LiDAR · {n} angezeigte Punkte · {tracking}\nFarbe = Höhe. Nicht gesehene Flächen und Fotoüberlappung werden nicht gemessen.',
   '3D SLAM': '3D-Ansicht',
+  '3D view': '3D-Ansicht',
+  'Lens': 'Objektiv',
   '2D Radar': '2D-Radar',
   'Density': 'Dichte',
   'Height': 'Höhe',

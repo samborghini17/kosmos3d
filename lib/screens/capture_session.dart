@@ -748,8 +748,10 @@ class _CaptureSessionScreenState extends State<CaptureSessionScreen>
                         ),
                         _buildBottomStat(
                           Icons.aspect_ratio,
-                          _project.cameraSettings['Resolution'] ?? '4K',
-                          'Res',
+                          _project.captureMode == 'video'
+                              ? _project.cameraSettings['Resolution'] ?? '4K'
+                              : _project.cameraSettings['Lens'] ?? 'Linear',
+                          _project.captureMode == 'video' ? 'Res' : 'Lens',
                         ),
                         _buildBottomStat(
                           Icons.explore,

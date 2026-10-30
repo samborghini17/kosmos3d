@@ -182,7 +182,7 @@ class _PointCloudCoverageVisualizerState
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _buildToggleButton(
-                        label: '3D SLAM',
+                        label: '3D view',
                         icon: Icons.view_in_ar,
                         isSelected: _is3DMode,
                         onTap: () => setState(() => _is3DMode = true),

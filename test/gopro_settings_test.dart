@@ -28,6 +28,7 @@ class FakeGoPro {
               125 => [0, 1, 2, 3],
               122 => [27, 28],
               171 => [0, 3],
+              172 => [1, 2], // HERO13: listed, but no 0 (off)
               _ => <int>[],
             };
             // Real cameras repeat the ID once per supported option.
@@ -66,6 +67,7 @@ void main() {
       expect(camera.writes, {125: 1, 171: 0, 122: 28});
       expect(camera.writes.containsKey(121), isFalse);
       expect(camera.writes.containsKey(227), isFalse);
+      expect(camera.writes.containsKey(172), isFalse);
     },
   );
   test('read-back mismatch fails the settings operation', () async {

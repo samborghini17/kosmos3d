@@ -130,8 +130,12 @@ class CaptureCoordinator extends ChangeNotifier {
     }
   }
 
-  Future<void> _shot(int generation) async {
-    await Future.wait(_rig.map((c) => c.verifyReady()));
+  /// [verified]: interval shots skip the pre-shot check because every
+  /// photo already ends with a full readiness check of all cameras.
+  Future<void> _shot(int generation, {bool verified = false}) async {
+    if (!verified || _video) {
+      await Future.wait(_rig.map((c) => c.verifyReady()));
+    }
     if (generation != _generation) return;
     final dispatchTime = DateTime.now().toUtc();
     final clock = Stopwatch()..start();
@@ -166,7 +170,7 @@ class CaptureCoordinator extends ChangeNotifier {
       if (!_active || generation != _generation || _locked) return;
       _locked = true;
       try {
-        await _shot(generation);
+        await _shot(generation, verified: true);
         _schedule(generation);
       } catch (e) {
         await _recover(e);
