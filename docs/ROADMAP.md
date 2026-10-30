@@ -95,11 +95,6 @@ The project toggle (now labelled *Capture guidance*) runs a few rules on the pho
 
 ## 6. License
 
-For an open-source app that will also be sold or distributed through the App Store and Play Store:
+Decided 30 Oct 2026: **Apache-2.0** (was MIT). Permissive and store-compatible, with an explicit patent grant and a requirement to mark changes. The license does not cover the name or logo; [NOTICE](../NOTICE) states that "KOSMOS 3D" and its logos stay with Kreativ Institut OWL, so forks must rebrand. GPL/AGPL were ruled out because they conflict with App Store terms.
 
-- **Apache-2.0** (recommended): permissive like MIT, adds an explicit patent grant and requires changes to be marked. Store-compatible. Does not grant use of the name or logo, so add a short trademark notice to keep "KOSMOS 3D" and the mark yours.
-- **MIT** (current): simplest, but anyone can publish a renamed copy with your logo unless you separately protect the name.
-- **GPL-3.0 / AGPL-3.0**: forces derivatives to stay open, but conflicts with App Store terms (the VLC case), so not recommended if you publish on iOS.
-- **Source-available (e.g. PolyForm Noncommercial)**: if you want to forbid commercial clones entirely. Then it is no longer "open source" in the OSI sense.
-
-Copyright line: `Copyright (c) 2026 Sam Wiemann, Kreativ Institut OWL`.
+Still to do for store release: register the word mark "KOSMOS 3D" (DPMA or EUIPO) if you want legal protection beyond the notice.

@@ -15,6 +15,7 @@
   <img alt="Android and iOS" src="https://img.shields.io/badge/Android%20%C2%B7%20iOS-55FC27?style=flat-square&labelColor=0A0C0B" />
   <img alt="Local first" src="https://img.shields.io/badge/data-stays%20on%20your%20phone-55FC27?style=flat-square&labelColor=0A0C0B" />
   <img alt="Languages" src="https://img.shields.io/badge/English%20%C2%B7%20Deutsch-55FC27?style=flat-square&labelColor=0A0C0B" />
+  <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-55FC27?style=flat-square&labelColor=0A0C0B" />
 </p>
 
 <p align="center">
@@ -202,7 +203,9 @@ KOSMOS has no account, no analytics and no server of its own. Projects stay on y
 
 ## License and imprint
 
-Released under the license in [LICENSE](LICENSE).
+KOSMOS 3D is open source under the [Apache License 2.0](LICENSE). You may use, change and redistribute the code, also commercially, as long as you keep the license and [NOTICE](NOTICE) and mark your changes.
+
+The name **KOSMOS 3D** and its logos are not covered by the license. If you publish your own build or fork, give it a different name and icon.
 
 **KOSMOS 3D** is developed by **Sam Wiemann** for the **Kreativ Institut OWL**.
 Imprint and contact: [kreativ.institute](https://kreativ.institute/de)

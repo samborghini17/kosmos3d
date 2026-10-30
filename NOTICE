@@ -1,0 +1,19 @@
+KOSMOS 3D
+Copyright 2026 Sam Wiemann, Kreativ Institut OWL
+https://kreativ.institute/de
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Trademarks
+"KOSMOS 3D", "KOSMOS" and the KOSMOS 3D logos are trademarks of
+Kreativ Institut OWL. The Apache License does not grant permission to use
+these names or logos (section 6). Forks and derived apps must use a
+different name and icon. Describing a fork as "based on KOSMOS 3D" is fine.
+
+Third-party names
+GoPro, HERO and Open GoPro are trademarks of GoPro, Inc. This project is not
+affiliated with or endorsed by GoPro, Inc.
+
+The Open GoPro setting catalog in lib/services/gopro_setting_catalog.dart is
+generated from the Open GoPro Python SDK (https://github.com/gopro/OpenGoPro),
+licensed under the MIT License, Copyright (c) 2021-2024 GoPro, Inc.
