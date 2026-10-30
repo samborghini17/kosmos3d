@@ -52,6 +52,7 @@ class DownloadRig extends GoProService {
     String filename,
     String targetFilePath, {
     Function(double)? onProgress,
+    void Function(String)? onStatus,
     int? expectedBytes,
   }) async {
     requests++;

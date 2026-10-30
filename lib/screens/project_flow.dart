@@ -112,11 +112,13 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                       const SizedBox(width: 12),
-                      AppText(
-                        goPro.capture.progress,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 13,
+                      Expanded(
+                        child: AppText(
+                          goPro.capture.progress,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -125,25 +127,38 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
               }
               return Padding(
                 padding: const EdgeInsets.only(top: 16.0),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ElevatedButton(
-                      onPressed: details.onStepContinue,
-                      child: AppText(
-                        isLastStep
-                            ? settings.translate('start_capture')
-                            : settings.translate('next'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (_currentStep > 0)
-                      TextButton(
-                        onPressed: details.onStepCancel,
+                    if (isLastStep && _startError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
                         child: AppText(
-                          settings.translate('back'),
-                          style: const TextStyle(color: Colors.white70),
+                          'Project not started: $_startError',
+                          style: const TextStyle(color: Colors.redAccent),
                         ),
                       ),
+                    Row(
+                      children: [
+                        ElevatedButton(
+                          onPressed: details.onStepContinue,
+                          child: AppText(
+                            isLastStep
+                                ? settings.translate('start_capture')
+                                : settings.translate('next'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (_currentStep > 0)
+                          TextButton(
+                            onPressed: details.onStepCancel,
+                            child: AppText(
+                              settings.translate('back'),
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               );
@@ -425,14 +440,19 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
                           ? ['1/125', '1/250', '1/500', '1/1000']
                           : ['1/60', '1/120', '1/240', '1/480']),
                     ], (v) => setState(() => _shutter = v)),
-                    _buildSettingDropdown('Target white balance (manual)', _whiteBalance, [
-                      'Camera preset',
-                      'Auto',
-                      '3200K',
-                      '4000K',
-                      '5500K',
-                      '6500K',
-                    ], (v) => setState(() => _whiteBalance = v)),
+                    _buildSettingDropdown(
+                      'Target white balance (manual)',
+                      _whiteBalance,
+                      [
+                        'Camera preset',
+                        'Auto',
+                        '3200K',
+                        '4000K',
+                        '5500K',
+                        '6500K',
+                      ],
+                      (v) => setState(() => _whiteBalance = v),
+                    ),
                   ],
                 ),
                 isActive: _currentStep >= 1,
@@ -472,9 +492,19 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
                       _buildSummaryRow(Icons.speed, 'FPS', _fps),
                     ],
                     _buildSummaryRow(Icons.camera_alt, 'Lens', _lens),
-                    _buildSummaryRow(Icons.exposure, 'Target ISO (manual)', _isoMax == 'Camera preset' ? _targetIso : _isoMax),
-                    _buildSummaryRow(Icons.stay_current_portrait, 'Mounting (manual)', _orientation),
-                    const AppText('Check exposure and mounting on every camera. The app verifies only supported BLE settings.'),
+                    _buildSummaryRow(
+                      Icons.exposure,
+                      'Target ISO (manual)',
+                      _isoMax == 'Camera preset' ? _targetIso : _isoMax,
+                    ),
+                    _buildSummaryRow(
+                      Icons.stay_current_portrait,
+                      'Mounting (manual)',
+                      _orientation,
+                    ),
+                    const AppText(
+                      'Check exposure and mounting on every camera. The app verifies only supported BLE settings.',
+                    ),
                     _buildSummaryRow(
                       Icons.linked_camera,
                       'Cameras',
@@ -617,10 +647,14 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
   }
 
   bool _isStarting = false;
+  String? _startError;
 
   Future<void> _createProjectAndStart(BuildContext context) async {
     if (_isStarting) return;
-    setState(() => _isStarting = true);
+    setState(() {
+      _isStarting = true;
+      _startError = null;
+    });
 
     final projectService = context.read<ProjectService>();
     final goPro = context.read<GoProService>();
@@ -640,7 +674,9 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
 
     // Shared settings
     cameraSettings['Orientation'] = _orientation;
-    cameraSettings['Target ISO'] = _isoMax == 'Camera preset' ? _targetIso : _isoMax;
+    cameraSettings['Target ISO'] = _isoMax == 'Camera preset'
+        ? _targetIso
+        : _isoMax;
     cameraSettings['Guidance'] = _guidance;
     cameraSettings['ISO Max'] = 'Camera preset';
     cameraSettings['Shutter'] = 'Camera preset';
@@ -676,6 +712,8 @@ class _ProjectFlowScreenState extends State<ProjectFlowScreen> {
         ),
       );
     } catch (e) {
+      debugPrint('Project start failed: $e');
+      if (mounted) setState(() => _startError = '$e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(

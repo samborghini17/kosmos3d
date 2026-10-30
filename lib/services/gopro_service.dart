@@ -238,6 +238,9 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
   }
 
   final CaptureCoordinator capture = CaptureCoordinator();
+
+  /// SHA-256 computed during download, keyed by final file path.
+  final Map<String, String> _downloadDigests = {};
   final Map<String, GoProProtocol> _protocols = {};
   final Map<String, List<StreamSubscription>> _subscriptions = {};
   final Map<String, int> _expectedModes = {};
@@ -1357,6 +1360,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     String filename,
     String targetFilePath, {
     Function(double progress)? onProgress,
+    void Function(String status)? onStatus,
     int? expectedBytes,
   }) async {
     if (![
@@ -1385,6 +1389,15 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
         throw HttpException('HTTP ${response.statusCode}');
       }
       await partial.parent.create(recursive: true);
+      // Checksum while downloading, so a 10 GB video is never read twice.
+      final digestSink = _DigestSink();
+      final hasher = sha256.startChunkedConversion(digestSink);
+      if (resumed) {
+        onStatus?.call('Checking the part already downloaded');
+        await for (final chunk in partial.openRead()) {
+          hasher.add(chunk);
+        }
+      }
       sink = partial.openWrite(mode: resumed ? FileMode.append : FileMode.write);
       var received = resumed ? resumeFrom : 0;
       final length = response.contentLength == null
@@ -1395,6 +1408,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       )) {
         if (_cancelImport) throw StateError('Import cancelled');
         sink.add(chunk);
+        hasher.add(chunk);
         received += chunk.length;
         if (length > 0) onProgress?.call((received / length).clamp(0, 1));
       }
@@ -1410,7 +1424,9 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
         keepPartial = false;
         throw const FormatException('Incomplete media download');
       }
+      hasher.close();
       await partial.rename(targetFilePath);
+      _downloadDigests[targetFilePath] = digestSink.value.toString();
       return true;
     } catch (e) {
       debugPrint('Download failed ($filename): $e');
@@ -1592,11 +1608,17 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       var verified = false;
       if (await existing.exists() && await receipt.exists()) {
         try {
+          // Photos are re-hashed (cheap). Multi-GB videos are matched by size
+          // and camera timestamp: re-hashing them on every import took minutes.
           final info = jsonDecode(await receipt.readAsString());
+          final length = await existing.length();
           verified =
-              info['sha256'] ==
-                  (await sha256.bind(existing.openRead()).first).toString() &&
-              info['sourceModified'] == item.modifiedTime?.toIso8601String();
+              info['bytes'] == length &&
+              info['sourceModified'] == item.modifiedTime?.toIso8601String() &&
+              (length > 256 * 1024 * 1024 ||
+                  info['sha256'] ==
+                      (await sha256.bind(existing.openRead()).first)
+                          .toString());
         } catch (_) {}
       }
       if (verified &&
@@ -1626,8 +1648,9 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
       );
 
       if (ok) {
-        final digest = (await sha256.bind(existing.openRead()).first)
-            .toString();
+        final digest =
+            _downloadDigests.remove(savePath) ??
+            (await sha256.bind(existing.openRead()).first).toString();
         final tempReceipt = File('${receipt.path}.part');
         await tempReceipt.writeAsString(
           jsonEncode({
@@ -2032,4 +2055,13 @@ class _GoProRigCamera implements RigCamera {
   Future<void> start() => service.triggerShutter(id);
   @override
   Future<void> stop() => service.stopShutter(id);
+}
+
+/// Receives the single digest from a chunked SHA-256 conversion.
+class _DigestSink implements Sink<Digest> {
+  late Digest value;
+  @override
+  void add(Digest data) => value = data;
+  @override
+  void close() {}
 }
