@@ -1368,22 +1368,28 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     final client = http.Client();
     final partial = File('$targetFilePath.part');
     IOSink? sink;
+    var keepPartial = true;
     try {
+      // Resume an interrupted download (multi-GB video chapters) with Range.
+      final resumeFrom = await partial.exists() ? await partial.length() : 0;
+      final request = http.Request(
+        'GET',
+        Uri.parse('http://$ip:8080/videos/DCIM/$directory/$filename'),
+      );
+      if (resumeFrom > 0) request.headers['Range'] = 'bytes=$resumeFrom-';
       final response = await client
-          .send(
-            http.Request(
-              'GET',
-              Uri.parse('http://$ip:8080/videos/DCIM/$directory/$filename'),
-            ),
-          )
+          .send(request)
           .timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200) {
+      final resumed = resumeFrom > 0 && response.statusCode == 206;
+      if (response.statusCode != 200 && !resumed) {
         throw HttpException('HTTP ${response.statusCode}');
       }
       await partial.parent.create(recursive: true);
-      sink = partial.openWrite();
-      var received = 0;
-      final length = response.contentLength ?? expectedBytes ?? 0;
+      sink = partial.openWrite(mode: resumed ? FileMode.append : FileMode.write);
+      var received = resumed ? resumeFrom : 0;
+      final length = response.contentLength == null
+          ? (expectedBytes ?? 0)
+          : response.contentLength! + (resumed ? resumeFrom : 0);
       await for (final chunk in response.stream.timeout(
         const Duration(seconds: 30),
       )) {
@@ -1400,6 +1406,8 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
           (expectedBytes != null &&
               expectedBytes > 0 &&
               received != expectedBytes)) {
+        // Wrong size after a full transfer: the partial file is not trustworthy.
+        keepPartial = false;
         throw const FormatException('Incomplete media download');
       }
       await partial.rename(targetFilePath);
@@ -1410,7 +1418,7 @@ class GoProService extends ChangeNotifier implements CameraServiceInterface {
     } finally {
       await sink?.close();
       client.close();
-      if (await partial.exists()) await partial.delete();
+      if (!keepPartial && await partial.exists()) await partial.delete();
     }
   }
 

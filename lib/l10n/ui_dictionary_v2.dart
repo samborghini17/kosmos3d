@@ -327,6 +327,29 @@ const germanV2 = <String, String>{
   'English': 'English',
   'Deutsch': 'Deutsch',
   'Live Camera Monitor': 'Live-Kameramonitor',
+  'Live preview, one camera at a time over its Wi-Fi':
+      'Live-Vorschau, jeweils eine Kamera über ihr WLAN',
+  '{n} photos and videos': '{n} Fotos und Videos',
+  'View files': 'Dateien ansehen',
+  'Import all files from 1 camera': 'Alle Dateien von 1 Kamera importieren',
+  'Loose imports': 'Einzelimporte',
+  'Imported files': 'Importierte Dateien',
+  'No imported files yet': 'Noch keine importierten Dateien',
+  'Copies in the phone gallery are in the album KOSMOS3D, sorted by the date the camera took them.':
+      'Kopien liegen in der Galerie im Album KOSMOS3D, sortiert nach Aufnahmedatum der Kamera.',
+  'Copies in Photos are sorted by the date the camera took them.':
+      'Kopien in Fotos sind nach Aufnahmedatum der Kamera sortiert.',
+  'Interrupted downloads: {n}. They continue on the next import.':
+      'Unterbrochene Downloads: {n}. Sie werden beim nächsten Import fortgesetzt.',
+  'In the app: Transfers → View files.':
+      'In der App: Übertragungen → Dateien ansehen.',
+  'Copies in Photos, sorted by the date the camera took them.':
+      'Kopien in Fotos, sortiert nach Aufnahmedatum der Kamera.',
+  'Copies in the gallery album KOSMOS3D, sorted by the date the camera took them.':
+      'Kopien im Galerie-Album KOSMOS3D, sortiert nach Aufnahmedatum der Kamera.',
+  'Camera SD cards are unchanged.': 'Die SD-Karten der Kameras bleiben unverändert.',
+  'Open with…': 'Öffnen mit …',
+  'Share': 'Teilen',
   'Multi-view live stream of all connected cameras':
       'Live-Bild aller verbundenen Kameras',
   'Sensor & Capture': 'Sensoren und Aufnahme',

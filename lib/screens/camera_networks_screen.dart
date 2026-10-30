@@ -120,10 +120,9 @@ class _CameraNetworksScreenState extends State<CameraNetworksScreen> {
                       : () => GoProMediaTransferDialog.show(context),
                   icon: const Icon(Icons.download),
                   label: AppText(
-                    'Import all files from {count} cameras'.replaceAll(
-                      '{count}',
-                      '${cameras.length}',
-                    ),
+                    cameras.length == 1
+                        ? 'Import all files from 1 camera'
+                        : 'Import all files from ${cameras.length} cameras',
                   ),
                 ),
                 const SizedBox(height: 12),

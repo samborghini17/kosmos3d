@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kosmos3d/l10n/ui_dictionary.dart';
 import 'package:kosmos3d/screens/camera_networks_screen.dart';
+import 'package:kosmos3d/screens/media_library_screen.dart';
 import 'package:kosmos3d/services/cloud_storage_service.dart';
 import 'package:kosmos3d/services/gopro_protocol.dart';
 import 'package:kosmos3d/services/gopro_setting_catalog.dart';
@@ -141,5 +142,14 @@ void main() {
       exposureLabsRecipe(iso: 400, kelvin: null, now: DateTime(2026)),
       startsWith('i4M4wAoT'),
     );
+  });
+
+  test('media count ignores receipts and partial downloads', () {
+    expect(isMediaFile('/a/C1_100GOPRO_GPAA0062.JPG'), true);
+    expect(isMediaFile('/a/C1_100GOPRO_GX010079.MP4'), true);
+    expect(isMediaFile('/a/C1_100GOPRO_GPAA0062.JPG.receipt.json'), false);
+    expect(isMediaFile('/a/C1_100GOPRO_GX020078.MP4.part'), false);
+    expect(isMediaFile('/a/trajectory.json'), false);
+    expect(isVideoFile('/a/x.MP4'), true);
   });
 }

@@ -1,9 +1,11 @@
+import 'dart:io';
 import '../l10n/app_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/gopro_service.dart';
+import '../screens/media_library_screen.dart';
 import '../services/system_settings_service.dart';
 
 class GoProMediaTransferDialog extends StatefulWidget {
@@ -31,6 +33,19 @@ class _GoProMediaTransferDialogState extends State<GoProMediaTransferDialog> {
   String _status =
       'Join a camera’s Wi-Fi, then browse its files. Bluetooth controls the rig; Wi-Fi transfers originals.';
   List<GoProMediaItem> _items = [];
+  String? _target;
+
+  /// Where imported files can be found, in words a user can act on.
+  List<String> _whereFiles(int galleryFailures) => [
+    'In the app: Transfers → View files.',
+    if (_gallery)
+      Platform.isIOS
+          ? 'Copies in Photos, sorted by the date the camera took them.'
+          : 'Copies in the gallery album KOSMOS3D, sorted by the date the camera took them.',
+    if (galleryFailures > 0)
+      'Gallery exports needing attention: $galleryFailures.',
+    'Camera SD cards are unchanged.',
+  ];
   final Set<int> _selected = {};
   Future<void> _credentials(String id) async {
     final service = context.read<GoProService>();
@@ -98,11 +113,13 @@ class _GoProMediaTransferDialogState extends State<GoProMediaTransferDialog> {
       if (mounted) {
         setState(() {
           _progress = report.complete ? 1 : _progress;
-          _status =
-              '${report.complete ? 'Import complete' : 'Import needs attention'}: ${report.imported} local files.\n'
-              '${report.cameras.map((c) => '${c.cameraName}: ${c.imported}/${c.found}${c.error == null ? '' : ' — ${c.error}'}').join('\n')}\n'
-              'Gallery exports needing attention: ${service.galleryFailures.length}.\n'
-              'Stored in: ${report.destination}\nCamera SD cards are unchanged. App files are removed if the app is uninstalled; export or upload a copy.';
+          _target = report.destination;
+          _status = [
+            '${report.complete ? 'Import complete' : 'Import needs attention'}: ${report.imported} local files.',
+            for (final c in report.cameras)
+              '${c.cameraName}: ${c.imported}/${c.found}${c.error == null ? '' : ' — ${c.error}'}',
+            ..._whereFiles(service.galleryFailures.length),
+          ].join('\n');
         });
       }
     } catch (e) {
@@ -168,10 +185,12 @@ class _GoProMediaTransferDialogState extends State<GoProMediaTransferDialog> {
       if (mounted) {
         setState(() {
           _progress = count == items.length ? 1 : _progress;
-          _status =
-              '$count of ${items.length} originals available locally. '
-              '${count == items.length ? 'Import complete.' : 'Retry to fetch missing files.'}'
-              '${_gallery ? ' Gallery export is attempted for supported photos and videos.' : ''}';
+          _target = target;
+          _status = [
+            '$count of ${items.length} originals available locally. '
+                '${count == items.length ? 'Import complete.' : 'Retry to fetch missing files.'}',
+            ..._whereFiles(service.galleryFailures.length),
+          ].join('\n');
         });
       }
     } catch (e) {
@@ -230,12 +249,28 @@ class _GoProMediaTransferDialogState extends State<GoProMediaTransferDialog> {
                     onPressed: context.read<GoProService>().cancelImport,
                     child: const AppText('Cancel import'),
                   ),
+                if (!busy && _target != null)
+                  TextButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MediaLibraryScreen(
+                          folder: Directory(_target!),
+                          title: 'Imported files',
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.photo_library_outlined),
+                    label: const AppText('View files'),
+                  ),
                 const SizedBox(height: 12),
                 FilledButton.icon(
                   onPressed: busy || cameras.isEmpty ? null : _importAll,
                   icon: const Icon(Icons.download_for_offline),
                   label: AppText(
-                    'Import all files from ${cameras.length} cameras',
+                    cameras.length == 1
+                        ? 'Import all files from 1 camera'
+                        : 'Import all files from ${cameras.length} cameras',
                   ),
                 ),
                 const AppText(

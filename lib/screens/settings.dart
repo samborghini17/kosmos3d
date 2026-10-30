@@ -136,7 +136,7 @@ class SettingsScreen extends StatelessWidget {
             _buildSettingCard(
               context,
               title: 'Live Camera Monitor',
-              subtitle: 'Multi-view live stream of all connected cameras',
+              subtitle: 'Live preview, one camera at a time over its Wi-Fi',
               icon: Icons.videocam,
               onTap: () {
                 showModalBottomSheet(

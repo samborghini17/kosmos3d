@@ -24,6 +24,7 @@
   <a href="#getting-the-files-off-the-cameras">Files</a> ·
   <a href="#storage-server">Storage server</a> ·
   <a href="#build-it-yourself">Build</a> ·
+  <a href="#contributing-and-support">Contribute</a> ·
   <a href="#license-and-imprint">License</a>
 </p>
 
@@ -71,7 +72,7 @@ Today the camera driver speaks [Open GoPro](https://gopro.github.io/OpenGoPro/) 
 App Store and TestFlight builds are planned. Until then you have two routes:
 
 - **With a Mac:** open `ios/Runner.xcworkspace` in Xcode, choose your team under *Signing & Capabilities*, connect the iPhone and press Run. Details in [ios/BUILD.md](ios/BUILD.md).
-- **Without a Mac:** every push builds an unsigned `kosmos3d-ios-unsigned-ipa` in [Actions](../../actions/workflows/build.yml). Install it with [Sideloadly](https://sideloadly.io/) or AltStore using your Apple ID. With a free Apple ID the app expires after 7 days. Free IDs also can't use the *Hotspot Configuration* capability, so join camera Wi-Fi yourself: the app shows each password and a QR code for that.
+- **Without a Mac:** every push builds `kosmos3d-ios-unsigned-ipa` in [Actions](../../actions/workflows/build.yml). Install it with [Sideloadly](https://sideloadly.io/) or AltStore using your Apple ID. See [ios/BUILD.md](ios/BUILD.md) for details.
 
 Allow **Bluetooth**, **Local Network** and **Location** when asked.
 
@@ -80,11 +81,11 @@ Allow **Bluetooth**, **Local Network** and **Location** when asked.
 1. **Prepare the cameras.** Switch them on and enable *Wireless Connections* in each camera's menu. Mount them in portrait.
 2. **Connect.** Open **Cameras** and tap *Scan*. Tap each camera. It turns green and shows its model and battery.
 3. **Match the rig.** Tap the sliders icon for **All camera settings**. Anything marked *Cameras differ* is a problem worth fixing now. Switch *Control mode* to **Pro** on all cameras to unlock the full list.
-4. **Set exposure.** Open Protune on each camera, or show all of them the *ISO / white balance* Labs QR (ISO 100 and 5500 K by default). The same QR also syncs each camera clock to the phone.
+4. **Set exposure.** Show every camera the *ISO / white balance* QR from **All camera settings** (needs GoPro Labs firmware; ISO 100 and 5500 K by default), or set them once in each camera's Protune menu.
 5. **New project.** Name it and keep **Outdoor Scan** (photo, Linear lens, 1 s interval, target ISO 100) or pick another preset. *Start* checks every camera before the first shot. If one disagrees, you are told which camera and which setting.
 6. **Capture.** Walk slowly. The coverage view shows where you have been and which directions are still empty. Tap *Stop* when you are done.
 
-The capture interval is the time **after** all cameras have finished the previous photo, so slow cameras never pile up a queue. In bright daylight with Linear lens the real cadence is close to 1 s.
+The interval starts once every camera has saved the previous photo, so the cameras stay in step.
 
 ## Getting the files off the cameras
 
@@ -101,9 +102,9 @@ Where files go:
 - Originals are stored **in the app**, per project: `kosmos3d_projects/<project>/captures/<serial>_<folder>_<file>`. Next to each file is a `.receipt.json` with its source path, size and checksum.
 - With *Also copy to Photos / Gallery* on, a copy goes to `DCIM/KOSMOS3D` on Android or the Photos app on iPhone.
 - The SD cards stay untouched. Delete there when you are sure.
-- App storage is removed when the app is uninstalled. Export (**Transfers → Export**) or upload before that.
+- **Transfers → Save to phone** copies a project to `Downloads/KOSMOS3D` (Android) or *Files → KOSMOS 3D* (iPhone).
 
-Downloads run one camera at a time because the phone can only be on one camera network. Downloading from all cameras in parallel over your phone's hotspot is planned for HERO12 and HERO13 (Open GoPro *Camera on Home Network*).
+Interrupted downloads continue where they stopped on the next import. **Transfers → View files** shows everything you imported.
 
 ## Storage server
 
@@ -129,7 +130,7 @@ For development builds you can bake defaults into the app so the form is already
 flutter run --dart-define-from-file=config/dev.local.json
 ```
 
-Don't use this for builds you hand to other people: values passed this way are inside the app package.
+Use this only for your own devices.
 
 ## Windows receiver
 
@@ -140,25 +141,18 @@ cd server
 .\start_receiver.ps1 -Storage D:\KOSMOS3D_UPLOADS -Port 8787
 ```
 
-The first start creates a private token in `%LOCALAPPDATA%\KOSMOS3D\receiver-token.txt`. In the app, open **Settings → KOSMOS receiver**, enter `http://<your-computer-ip>:8787` and the token. Phone and computer must be on the same network. Every file is checked with SHA-256 before it is stored. The receiver stores files; it does not reconstruct. More in [server/README.md](server/README.md).
+The first start creates a private token in `%LOCALAPPDATA%\KOSMOS3D\receiver-token.txt`. In the app, open **Settings → KOSMOS receiver**, enter `http://<your-computer-ip>:8787` and the token. Phone and computer must be on the same network. Every file is checked with SHA-256 before it is stored, ready for your reconstruction software on the same machine. More in [server/README.md](server/README.md).
 
 ## Sensors and coverage
 
-Every shot writes one line to the project's sensor log: time, GPS position and accuracy, compass heading, phone attitude as a quaternion, barometric pressure, and which cameras acknowledged the shutter. Use it as a prior for alignment in COLMAP, RealityCapture, Metashape or Nerfstudio.
+Every shot writes one line to the project's sensor log: time, GPS position and accuracy, compass heading, phone attitude as a quaternion, barometric pressure, and which cameras fired. Use it to speed up alignment in COLMAP, RealityCapture, Metashape or Nerfstudio.
 
 - **LiDAR iPhones** record measured depth frames and show the point cloud live while you scan.
-- **Other phones** show the poses in an orbit view (drag to rotate, pinch to zoom, top and front views) coloured by density or height, plus a walking-speed warning. This shows which **directions** you covered, not which surfaces. Overlap is still checked in the photos.
+- **Other phones** show the poses in an orbit view (drag to rotate, pinch to zoom, top and front views) coloured by density or height, plus a walking-speed warning.
 
-*Capture guidance* in the project settings gives rule-based hints during capture: a heading gap, moving too fast, two shots too similar. It does not analyse the images.
+*Capture guidance* in the project settings tells you during capture where a direction is missing, when you walk too fast, and when two shots are too similar.
 
-## Honest limits
-
-- **Synchronisation.** The shutter command goes to every camera at the same moment over Bluetooth. That gets cameras within tens of milliseconds, not frame-locked. For moving subjects you need hardware sync.
-- **ISO, shutter and white balance** are not in GoPro's official Bluetooth API. Use the Labs QR or set them on each camera once. The app never sends unofficial values.
-- **Formatting SD cards** is done on the camera. There is no verified remote command, so the app offers none.
-- **Uploads** run while the app is open. Background uploads after the app is closed are on the roadmap.
-
-The full list of what's next is in [docs/ROADMAP.md](docs/ROADMAP.md).
+Planned features are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Build it yourself
 
@@ -196,6 +190,12 @@ Project layout:
 ### Adding another camera or Bluetooth device
 
 Implement `CameraServiceInterface` (connect, trigger, stop, apply settings) for the device, plus the `RigCamera` contract used by the capture coordinator (`configure`, `verifyReady`, `start`, `stop`). The coordinator does not know about GoPro. Any device that can confirm "ready" and "started" fits the same synchronised capture flow.
+
+## Contributing and support
+
+Bug reports and ideas: [open an issue](../../issues). Please include phone model, camera models and firmware, and what you expected.
+
+Pull requests are welcome. Run the checks above, keep changes focused, and add English and German text for anything users see.
 
 ## Privacy
 

@@ -13,6 +13,7 @@ import '../services/system_settings_service.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/gopro_media_transfer_dialog.dart';
 import 'gallery_screen.dart';
+import 'media_library_screen.dart';
 
 class TransferHubScreen extends StatefulWidget {
   const TransferHubScreen({super.key});
@@ -288,12 +289,33 @@ class _TransferHubScreenState extends State<TransferHubScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: AppText(
-                        '${_files.length} local files',
+                        '{n} photos and videos'.replaceAll(
+                          '{n}',
+                          '${_files.where((f) => isMediaFile(f.path)).length}',
+                        ),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
                     AppText(_size(_bytes), style: TextStyle(color: muted)),
                   ],
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () async {
+                    final folder = await _folder();
+                    if (!context.mounted) return;
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MediaLibraryScreen(
+                          folder: folder,
+                          title: selected?.name ?? 'Loose imports',
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const AppText('View files'),
                 ),
                 const SizedBox(height: 8),
                 AppText(
